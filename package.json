@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "helmet": "^7.1.0",
+    "phaser": "^3.80.1"
+  },
+  "name": "project",
+  "version": "1.0.0",
+  "main": "bs-config.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}

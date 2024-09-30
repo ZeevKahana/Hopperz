@@ -1,0 +1,1 @@
+Go to Terminal > cd "project directory" > browser-sync start --config bs-config.js
