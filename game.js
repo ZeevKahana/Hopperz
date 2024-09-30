@@ -11,25 +11,93 @@ const CONSTANTS = {
 class MainMenuScene extends Phaser.Scene {
     constructor() {
         super('MainMenu');
+        this.isOptionsOpen = false;
     }
 
     preload() {
         this.load.image('menuBackground', 'assets/menu_background.png');
         this.load.image('startButton', 'assets/start_button.png');
+        this.load.audio('menuSoundtrack', 'assets/menu_soundtrack.mp3');
+        this.load.image('optionsButton', 'assets/options-button.png');
     }
 
     create() {
-        this.add.image(400, 300, 'menuBackground')
-        .setScale(1.28);
+        this.add.image(400, 300, 'menuBackground').setScale(1.28);
 
         const startButton = this.add.image(402, 385, 'startButton')
             .setInteractive()
             .setScale(0.85);
 
         startButton.on('pointerdown', () => {
+            this.sound.stopAll();
             this.scene.start('GameScene');
         });
+        const optionsButton = this.add.image(600, 385, 'optionsButton')
+             .setInteractive()
+             .setScale(0.10);
+
+        optionsButton.on('pointerdown', () => {
+            if (!this.isOptionsOpen) {
+                this.showOptionsPage();
+            }
+        });
+        this.sound.play('menuSoundtrack', { loop: true });
     }
+
+    showOptionsPage() {
+        if (this.isOptionsOpen) return;
+        this.isOptionsOpen = true;
+    
+        // Create a container to hold all options elements
+        const optionsContainer = this.add.container(0, 0);
+    
+        // Create a semi-transparent background
+        const bg = this.add.rectangle(400, 300, 400, 300, 0x000000, 0.7);
+        optionsContainer.add(bg);
+    
+        // Add a title
+        const title = this.add.text(400, 200, 'Options', { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
+        optionsContainer.add(title);
+    
+        // Get the current volume (assuming it's between 0 and 1)
+        const currentVolume = Math.round(this.sound.volume * 100);
+    
+        // Add volume text
+        const volumeText = this.add.text(250, 250, `Volume: ${currentVolume}`, { fontSize: '24px', fill: '#fff' });
+        optionsContainer.add(volumeText);
+    
+        // Add volume slider
+        const slider = this.add.rectangle(400, 300, 200, 10, 0xffffff);
+        optionsContainer.add(slider);
+    
+        // Calculate initial slider button position based on current volume
+        const initialSliderX = 300 + (currentVolume * 2);
+        const sliderButton = this.add.circle(initialSliderX, 300, 15, 0xff0000)
+            .setInteractive()
+            .setDepth(1);
+        optionsContainer.add(sliderButton);
+    
+        // Make the slider button draggable
+        this.input.setDraggable(sliderButton);
+    
+        this.input.on('drag', (pointer, gameObject, dragX) => {
+            dragX = Phaser.Math.Clamp(dragX, 300, 500);
+            gameObject.x = dragX;
+            const volume = Math.round((dragX - 300) / 2);
+            volumeText.setText(`Volume: ${volume}`);
+            this.sound.setVolume(volume / 100);
+        });
+    
+        // Add a close button
+        const closeButton = this.add.text(550, 170, 'X', { fontSize: '24px', fill: '#fff' })
+            .setInteractive();
+        optionsContainer.add(closeButton);
+    
+        closeButton.on('pointerdown', () => {
+            optionsContainer.destroy();
+            this.isOptionsOpen = false;
+        });
+      }
 }
 
 class GameScene extends Phaser.Scene {
@@ -58,7 +126,14 @@ class GameScene extends Phaser.Scene {
             playerScore: 0,
             botScore: 0,
             lastCollisionTime: 0,
-            invulnerableUntil: 0
+            invulnerableUntil: 0,
+            botMoveEvent: null,
+            gameSoundtrack: null,
+            afterGameSoundtrack: null,
+            shieldPowerup: null,
+            shieldTimer: null,
+            playerShielded: false,
+            botShielded: false
         };
     }
     
@@ -68,6 +143,10 @@ class GameScene extends Phaser.Scene {
         this.load.image('cloud', 'assets/cloud.png');
         this.load.spritesheet('dude', 'assets/dude.png', { frameWidth: 32, frameHeight: 48 });
         this.load.image('button', 'assets/button.png');
+        this.load.image('returnMenuButton', 'assets/Return-Menu-Button.png');
+        this.load.audio('gameSoundtrack', 'assets/game_soundtrack.mp3');
+        this.load.audio('afterGameSoundtrack', 'assets/aftergame_soundtrack.mp3');
+        this.load.image('shieldPowerup', 'assets/shield-powerup.png');
     }
 
     create() {
@@ -80,6 +159,17 @@ class GameScene extends Phaser.Scene {
         this.createColliders();
         this.createBotMovement();
         this.gameState.timerEvent = this.time.addEvent({ delay: CONSTANTS.GAME_DURATION, callback: this.onTimerEnd, callbackScope: this });
+        this.gameState.gameSoundtrack = this.sound.add('gameSoundtrack', { loop: true });
+        this.gameState.gameSoundtrack.play();
+        this.gameState.afterGameSoundtrack = this.sound.add('afterGameSoundtrack', { loop: true });
+        this.gameState.shieldTimer = this.time.addEvent({
+            delay: 30000,
+            callback: this.spawnShieldPowerup,
+            callbackScope: this,
+            loop: true
+        });
+    
+        //this.spawnShieldPowerup(); // Spawn first shield immediately
     }
 
     update() {
@@ -88,6 +178,32 @@ class GameScene extends Phaser.Scene {
             this.updateHitboxes();
             this.checkBotPosition();
             this.updateTimer();
+        }
+        if (this.gameState.playerShielded && this.gameState.playerShieldSprite) {
+            this.gameState.playerShieldSprite.setPosition(this.gameState.player.x, this.gameState.player.y);
+        }
+        if (this.gameState.botShielded && this.gameState.botShieldSprite) {
+            this.gameState.botShieldSprite.setPosition(this.gameState.bot.x, this.gameState.bot.y);
+        }
+        if (this.gameState.shieldPowerup && this.gameState.shieldPowerup.active) {
+            const distToPlayer = Phaser.Math.Distance.Between(
+                this.gameState.player.x, this.gameState.player.y,
+                this.gameState.shieldPowerup.x, this.gameState.shieldPowerup.y
+            );
+            const distToBot = Phaser.Math.Distance.Between(
+                this.gameState.bot.x, this.gameState.bot.y,
+                this.gameState.shieldPowerup.x, this.gameState.shieldPowerup.y
+            );
+            console.log(`Distance to Player: ${distToPlayer.toFixed(2)}, Distance to Bot: ${distToBot.toFixed(2)}`);
+        }
+        if (this.gameState.shieldPowerup && this.gameState.shieldPowerup.active) {
+            const isOverlapping = Phaser.Geom.Intersects.RectangleToRectangle(
+                this.gameState.player.getBounds(),
+                this.gameState.shieldPowerup.getBounds()
+            );
+            if (isOverlapping) {
+                console.log('Player is overlapping with shield');
+            }
         }
     }
 
@@ -142,7 +258,12 @@ class GameScene extends Phaser.Scene {
     }
 
     createBotMovement() {
-        this.botMoveEvent = this.time.addEvent({ delay: CONSTANTS.BOT_MOVE_DELAY, callback: this.moveBot, callbackScope: this, loop: true });
+        this.gameState.botMoveEvent = this.time.addEvent({
+            delay: CONSTANTS.BOT_MOVE_DELAY,
+            callback: this.moveBot,
+            callbackScope: this,
+            loop: true
+        });
     }
 
     handlePlayerMovement() {
@@ -182,9 +303,10 @@ class GameScene extends Phaser.Scene {
     handleCollision(entity1, entity2) {
         const currentTime = this.time.now;
         if (currentTime < this.gameState.invulnerableUntil) {
+            console.log('Collision ignored due to invulnerability');
             return; // Still invulnerable, ignore collision
         }
-
+    
         let killer, victim;
         if (entity1 === this.gameState.playerFeet || entity2 === this.gameState.botHead) {
             killer = this.gameState.player;
@@ -193,20 +315,62 @@ class GameScene extends Phaser.Scene {
             killer = this.gameState.bot;
             victim = this.gameState.player;
         }
-
+    
+        console.log(`Collision detected. Killer: ${killer === this.gameState.player ? 'Player' : 'Bot'}, Victim: ${victim === this.gameState.player ? 'Player' : 'Bot'}`);
+        console.log(`Player shielded: ${this.gameState.playerShielded}, Bot shielded: ${this.gameState.botShielded}`);
+    
         // Check if either entity is dead
         if ((killer === this.gameState.player && this.gameState.playerDead) ||
             (killer === this.gameState.bot && this.gameState.botDead) ||
             (victim === this.gameState.player && this.gameState.playerDead) ||
             (victim === this.gameState.bot && this.gameState.botDead)) {
+            console.log('Collision ignored due to dead entity');
             return; // Ignore collision if either entity is dead
         }
-
+    
         if (killer.y < victim.y) {
+            if (victim === this.gameState.player && this.gameState.playerShielded) {
+                console.log('Player shield activated');
+                // Player is shielded, remove shield and bounce
+                this.removeShield(this.gameState.player);
+                killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
+                // Add a brief invulnerability period after shield is removed
+                this.gameState.invulnerableUntil = currentTime + 150; // 150ms invulnerability
+                return; // Exit the method to prevent further processing
+            } else if (victim === this.gameState.bot && this.gameState.botShielded) {
+                console.log('Bot shield activated');
+                // Bot is shielded, remove shield and bounce
+                this.removeShield(this.gameState.bot);
+                killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
+                // Add a brief invulnerability period after shield is removed
+                this.gameState.invulnerableUntil = currentTime + 150; // 150ms invulnerability
+                return; // Exit the method to prevent further processing
+            }
+            
+            // If we reach here, the victim is not shielded
+            console.log('No shield, handling kill');
             this.handleKill(killer, victim);
         }
     }
-
+    
+    removeShield(character) {
+        console.log(`Removing shield from ${character === this.gameState.player ? 'Player' : 'Bot'}`);
+        if (character === this.gameState.player) {
+            this.gameState.playerShielded = false;
+            if (this.gameState.playerShieldSprite) {
+                this.gameState.playerShieldSprite.destroy();
+                this.gameState.playerShieldSprite = null;
+            }
+        } else {
+            this.gameState.botShielded = false;
+            if (this.gameState.botShieldSprite) {
+                this.gameState.botShieldSprite.destroy();
+                this.gameState.botShieldSprite = null;
+            }
+        }
+        console.log(`Shield removed. Player shielded: ${this.gameState.playerShielded}, Bot shielded: ${this.gameState.botShielded}`);
+    }
+    
     handleKill(killer, victim) {
         killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
         if (victim === this.gameState.player) {
@@ -222,6 +386,10 @@ class GameScene extends Phaser.Scene {
             this.gameState.botDead = true;
             bot.setVisible(false);
             bot.body.enable = false;
+            if (this.gameState.botMoveEvent) {
+                this.gameState.botMoveEvent.remove();
+                this.gameState.botMoveEvent = null;
+            }
             this.gameState.playerScore += 1;
             this.gameState.playerScoreText.setText('Player Score: ' + this.gameState.playerScore);
             this.checkWinCondition('Player');
@@ -256,32 +424,78 @@ class GameScene extends Phaser.Scene {
     respawnEntity(entity, type) {
         const MAX_ATTEMPTS = 20;
         let validPosition = false;
+        let newPosX, newPosY;
+    
         for (let attempts = 0; attempts < MAX_ATTEMPTS; attempts++) {
-            const newPosX = Phaser.Math.Between(50, 750);
-            const newPosY = Phaser.Math.Between(50, 400); // Reduced spawn area to avoid bottom
-            entity.setPosition(newPosX, newPosY);
-            if (!this.physics.overlapRect(newPosX - 16, newPosY - 24, 32, 48, false, true, this.gameState.platforms)) {
+            newPosX = Phaser.Math.Between(50, 750);
+            newPosY = Phaser.Math.Between(50, 550);
+    
+            // Check if the new position overlaps with any platform
+            let overlapping = false;
+            this.gameState.platforms.children.entries.forEach((platform) => {
+                if (Phaser.Geom.Intersects.RectangleToRectangle(
+                    new Phaser.Geom.Rectangle(newPosX - 16, newPosY - 24, 32, 48),
+                    platform.getBounds()
+                )) {
+                    overlapping = true;
+                }
+            });
+    
+            if (!overlapping) {
                 validPosition = true;
                 break;
             }
         }
+    
         if (!validPosition) {
             // If no valid position found, place at a predetermined safe spot
-            entity.setPosition(400, 100);
+            newPosX = 400;
+            newPosY = 100;
         }
+    
+        entity.setPosition(newPosX, newPosY);
         entity.setVisible(true);
         entity.body.enable = true;
         entity.setVelocity(0, 0); // Ensure entity starts stationary
+    
+        if (type === 'bot') {
+            this.gameState.botDead = false;
+            // Immediately move the bot
+            this.moveBot();
+            // Restart bot movement loop
+            if (this.gameState.botMoveEvent) {
+                this.gameState.botMoveEvent.remove();
+            }
+            this.gameState.botMoveEvent = this.time.addEvent({
+                delay: CONSTANTS.BOT_MOVE_DELAY,
+                callback: this.moveBot,
+                callbackScope: this,
+                loop: true
+            });
+        } else if (type === 'player') {
+            this.gameState.playerDead = false;
+        }
     }
 
     moveBot() {
         if (!this.gameState.botDead && !this.gameState.winText) {
             const directions = [-300, 300];
-            this.gameState.bot.setVelocityX(directions[Math.floor(Math.random() * directions.length)]);
+            const newVelocityX = directions[Math.floor(Math.random() * directions.length)];
+            this.gameState.bot.setVelocityX(newVelocityX);
+    
+            // Only jump if the bot is on the ground
             if (Math.random() > 0.5 && this.gameState.bot.body.touching.down) {
                 this.gameState.bot.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
             }
-            this.gameState.bot.anims.play(this.gameState.bot.body.velocity.x < 0 ? 'left' : this.gameState.bot.body.velocity.x > 0 ? 'right' : 'turn', true);
+    
+            // Update animation based on movement
+            if (newVelocityX < 0) {
+                this.gameState.bot.anims.play('left', true);
+            } else if (newVelocityX > 0) {
+                this.gameState.bot.anims.play('right', true);
+            } else {
+                this.gameState.bot.anims.play('turn', true);
+            }
         }
     }
 
@@ -311,42 +525,189 @@ class GameScene extends Phaser.Scene {
         this.gameState.bot.setVelocity(0, 0);
         this.gameState.bot.body.enable = false;
         if (this.gameState.timerEvent) this.gameState.timerEvent.paused = true;
+        
+        // Stop game soundtrack and play after-game soundtrack
+        this.gameState.gameSoundtrack.stop();
+        this.gameState.afterGameSoundtrack.play();
+        
         this.gameState.winText = this.add.text(400, 250, message, { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
-        this.gameState.restartButton = this.add.image(400, 350, 'button').setInteractive().setScale(0.05);
+        
+        // Restart button
+        this.gameState.restartButton = this.add.image(300, 430, 'button').setInteractive().setScale(0.05);
         this.gameState.restartButton.on('pointerdown', () => this.restartGame());
+        
+        // Return to Main Menu button
+        this.gameState.returnMenuButton = this.add.image(500, 430, 'returnMenuButton').setInteractive().setScale(0.15);
+        this.gameState.returnMenuButton.on('pointerdown', () => this.returnToMainMenu());
+        
+        // Add text labels for the buttons
+        this.add.text(300, 430, 'Restart', { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
     }
 
+    spawnShieldPowerup() {
+        if (this.gameState.shieldPowerup) {
+            this.gameState.shieldPowerup.destroy();
+        }
+    
+        let x, y;
+        let validPosition = false;
+        const powerupSize = 32; // Adjust this value based on your shield powerup size
+    
+        while (!validPosition) {
+            x = Phaser.Math.Between(powerupSize, this.sys.game.config.width - powerupSize);
+            y = Phaser.Math.Between(100, 300); // Spawn in the upper part of the screen
+    
+            // Check if the position is not overlapping with any platform
+            validPosition = !this.isOverlappingPlatform(x, y, powerupSize);
+        }
+    
+        this.gameState.shieldPowerup = this.physics.add.sprite(x, y, 'shieldPowerup');
+        this.gameState.shieldPowerup.setScale(0.17); // Adjust scale as needed
+        
+        // Set a smaller circular collision body
+        const collisionRadius = powerupSize / 4; // Decreased collision radius
+        this.gameState.shieldPowerup.body.setCircle(collisionRadius, 
+            (this.gameState.shieldPowerup.width - collisionRadius * 2) / 2, 
+            (this.gameState.shieldPowerup.height - collisionRadius * 2) / 2);
+        
+        this.gameState.shieldPowerup.setCollideWorldBounds(true);
+        this.gameState.shieldPowerup.body.allowGravity = false; // Disable gravity
+    
+        // Create a yoyo tween
+        this.tweens.add({
+            targets: this.gameState.shieldPowerup,
+            y: y + 50, // Move 50 pixels down
+            duration: 1000,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1 // Repeat indefinitely
+        });
+    
+        // Use overlap for collision detection
+        this.physics.add.overlap(this.gameState.player, this.gameState.shieldPowerup, this.collectShield, this.checkShieldProximity, this);
+        this.physics.add.overlap(this.gameState.bot, this.gameState.shieldPowerup, this.collectShield, this.checkShieldProximity, this);
+    
+        console.log(`Shield powerup spawned at x: ${x}, y: ${y}`);
+    }
+
+    checkShieldProximity(character, shield) {
+        const distance = Phaser.Math.Distance.Between(character.x, character.y, shield.x, shield.y);
+        console.log(`Distance to shield: ${distance.toFixed(2)}`);
+        return distance < 25; // Adjust this value as needed for precise collection
+    }
+    
+    
+    checkShieldCollision(character, shield) {
+        const characterBounds = character.getBounds();
+        const shieldBounds = shield.getBounds();
+    
+        if (Phaser.Geom.Intersects.RectangleToRectangle(characterBounds, shieldBounds)) {
+            const intersection = Phaser.Geom.Intersects.GetRectangleIntersection(characterBounds, shieldBounds);
+            if (intersection.width > 5 && intersection.height > 5) { // Adjust these values for desired precision
+                this.collectShield(character, shield);
+            }
+        }
+    }
+    
+    isOverlappingPlatform(x, y, size) {
+        const testRect = new Phaser.Geom.Rectangle(x - size/2, y - size/2, size, size);
+        return this.gameState.platforms.children.entries.some(platform => 
+            Phaser.Geom.Intersects.RectangleToRectangle(testRect, platform.getBounds())
+        );
+    }
+
+    collectShield(character, shield) {
+    console.log(`Collision detected between character and shield`);
+    console.log(`Character position: x: ${character.x}, y: ${character.y}`);
+    console.log(`Shield position: x: ${shield.x}, y: ${shield.y}`);
+
+    // Check if the character already has a shield
+    if ((character === this.gameState.player && this.gameState.playerShielded) ||
+        (character === this.gameState.bot && this.gameState.botShielded)) {
+        console.log(`${character === this.gameState.player ? 'Player' : 'Bot'} already has a shield. Not collecting.`);
+        return; // Don't collect if already shielded
+    }
+
+    shield.destroy();
+    
+    const shieldSprite = this.add.image(character.x, character.y, 'shieldPowerup');
+    shieldSprite.setScale(0.17);
+    shieldSprite.setAlpha(0.4);
+    
+    if (character === this.gameState.player) {
+        this.gameState.playerShielded = true;
+        this.gameState.playerShieldSprite = shieldSprite;
+        console.log('Shield collected by Player');
+    } else {
+        this.gameState.botShielded = true;
+        this.gameState.botShieldSprite = shieldSprite;
+        console.log('Shield collected by Bot');
+    }
+}
+
     restartGame() {
+        // Stop after-game soundtrack and replay game soundtrack
+        this.gameState.afterGameSoundtrack.stop();
+        this.gameState.gameSoundtrack.play();
+    
         // Reset scores
         this.gameState.playerScore = 0;
         this.gameState.botScore = 0;
         this.gameState.playerScoreText.setText('Player Score: 0');
         this.gameState.botScoreText.setText('Bot Score: 0');
-
-        // Clear win message and restart button
+    
+        // Clear win message and buttons
         if (this.gameState.winText) this.gameState.winText.destroy();
         if (this.gameState.restartButton) this.gameState.restartButton.destroy();
+        if (this.gameState.returnMenuButton) this.gameState.returnMenuButton.destroy();
         this.gameState.winText = null;
         this.gameState.restartButton = null;
-
+        this.gameState.returnMenuButton = null;
+    
         // Reset player and bot states
         this.gameState.playerDead = false;
         this.gameState.botDead = false;
-
+    
         // Respawn entities
         this.respawnEntity(this.gameState.player, 'player');
         this.respawnEntity(this.gameState.bot, 'bot');
-
+    
         // Reset invulnerability
         this.gameState.invulnerableUntil = 0;
-
+    
         // Reset and restart the timer
         if (this.gameState.timerEvent) this.gameState.timerEvent.remove();
         this.gameState.timerEvent = this.time.addEvent({ delay: CONSTANTS.GAME_DURATION, callback: this.onTimerEnd, callbackScope: this });
-
+    
         // Ensure bot movement is restarted
-        this.time.addEvent({ delay: CONSTANTS.BOT_MOVE_DELAY, callback: this.moveBot, callbackScope: this, loop: true });
+        this.createBotMovement();
     }
+
+    returnToMainMenu() {
+        // Stop any ongoing game processes
+        if (this.gameState.timerEvent) this.gameState.timerEvent.remove();
+        if (this.gameState.botMoveEvent) this.gameState.botMoveEvent.remove();
+        
+
+        // Stop all game sounds
+        this.sound.stopAll();
+        // Reset game state
+        this.gameState.playerScore = 0;
+        this.gameState.botScore = 0;
+        this.gameState.playerDead = false;
+        this.gameState.botDead = false;
+        this.gameState.invulnerableUntil = 0;
+        
+        // Remove any existing game objects
+        if (this.gameState.winText) this.gameState.winText.destroy();
+        if (this.gameState.restartButton) this.gameState.restartButton.destroy();
+        if (this.gameState.returnMenuButton) this.gameState.returnMenuButton.destroy();
+        
+        // Switch to the MainMenu scene
+        this.scene.start('MainMenu');
+    }
+
+    
 }
 const config = {
     type: Phaser.AUTO, // Choose WebGL if available, otherwise use Canvas
