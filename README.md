@@ -10,3 +10,8 @@ including a working shield powerup
 included:
 -login/register form
 -.bat file that opens up the game in-browser
+
+10/01/24 - ver 0.14 available
+included:
+-map improved - new tiles and background.
+-bug fixes
