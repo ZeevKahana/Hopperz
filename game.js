@@ -354,7 +354,7 @@ class GameScene extends Phaser.Scene {
     
     preload() {
         this.load.image('sky', 'assets/sky.png');
-        this.load.image('ground', 'assets/platform.png');
+        this.load.image('platform', 'assets/platform.png');
         this.load.image('cloud', 'assets/cloud.png');
         this.load.spritesheet('dude', 'assets/dude.png', { frameWidth: 32, frameHeight: 48 });
         this.load.image('button', 'assets/button.png');
@@ -424,10 +424,22 @@ class GameScene extends Phaser.Scene {
 
     createPlatforms() {
         this.gameState.platforms = this.physics.add.staticGroup();
-        this.gameState.platforms.create(400, 568, 'ground').setScale(2).refreshBody();
-        this.gameState.platforms.create(600, 400, 'ground');
-        this.gameState.platforms.create(50, 250, 'ground');
-        this.gameState.platforms.create(750, 220, 'ground');
+    
+        // Create bottom platform (full width)
+        this.createPlatform(0, 600, 800, 64);
+    
+        // Create upper platforms
+        this.createPlatform(0, 250, 200, 32);     // Left platform
+        this.createPlatform(300, 400, 300, 32);   // Middle platform
+        this.createPlatform(650, 250, 150, 32);   // Right platform
+    }
+    
+    createPlatform(x, y, width, height) {
+        const platform = this.gameState.platforms.create(x, y, 'platform');
+        platform.setOrigin(0, 1); // Set origin to bottom-left corner
+        platform.displayWidth = width;
+        platform.displayHeight = height;
+        platform.refreshBody(); // Update the physics body after resizing
     }
 
     createPlayer() {
@@ -741,6 +753,16 @@ class GameScene extends Phaser.Scene {
         this.gameState.bot.body.enable = false;
         if (this.gameState.timerEvent) this.gameState.timerEvent.paused = true;
         
+        // Stop the shield spawn timer
+        if (this.gameState.shieldTimer) {
+            this.gameState.shieldTimer.remove();
+        }
+    
+        // Destroy any existing shield powerups
+        if (this.gameState.shieldPowerup) {
+            this.gameState.shieldPowerup.destroy();
+        }
+        
         // Stop game soundtrack and play after-game soundtrack
         this.gameState.gameSoundtrack.stop();
         this.gameState.afterGameSoundtrack.play();
@@ -832,33 +854,34 @@ class GameScene extends Phaser.Scene {
     }
 
     collectShield(character, shield) {
-    console.log(`Collision detected between character and shield`);
-    console.log(`Character position: x: ${character.x}, y: ${character.y}`);
-    console.log(`Shield position: x: ${shield.x}, y: ${shield.y}`);
-
-    // Check if the character already has a shield
-    if ((character === this.gameState.player && this.gameState.playerShielded) ||
-        (character === this.gameState.bot && this.gameState.botShielded)) {
-        console.log(`${character === this.gameState.player ? 'Player' : 'Bot'} already has a shield. Not collecting.`);
-        return; // Don't collect if already shielded
-    }
-
-    shield.destroy();
+        console.log(`Collision detected between character and shield`);
+        console.log(`Character position: x: ${character.x}, y: ${character.y}`);
+        console.log(`Shield position: x: ${shield.x}, y: ${shield.y}`);
     
-    const shieldSprite = this.add.image(character.x, character.y, 'shieldPowerup');
-    shieldSprite.setScale(0.17);
-    shieldSprite.setAlpha(0.4);
+        // If character already has a shield, just destroy the powerup
+        if ((character === this.gameState.player && this.gameState.playerShielded) ||
+            (character === this.gameState.bot && this.gameState.botShielded)) {
+            shield.destroy();
+            return;
+        }
     
-    if (character === this.gameState.player) {
-        this.gameState.playerShielded = true;
-        this.gameState.playerShieldSprite = shieldSprite;
-        console.log('Shield collected by Player');
-    } else {
-        this.gameState.botShielded = true;
-        this.gameState.botShieldSprite = shieldSprite;
-        console.log('Shield collected by Bot');
+        // If we reach here, the character doesn't have a shield
+        shield.destroy();
+        
+        const shieldSprite = this.add.image(character.x, character.y, 'shieldPowerup');
+        shieldSprite.setScale(0.17);
+        shieldSprite.setAlpha(0.4);
+        
+        if (character === this.gameState.player) {
+            this.gameState.playerShielded = true;
+            this.gameState.playerShieldSprite = shieldSprite;
+            console.log('Shield collected by Player');
+        } else {
+            this.gameState.botShielded = true;
+            this.gameState.botShieldSprite = shieldSprite;
+            console.log('Shield collected by Bot');
+        }
     }
-}
 
     restartGame() {
         // Stop after-game soundtrack and replay game soundtrack
@@ -882,6 +905,8 @@ class GameScene extends Phaser.Scene {
         // Reset player and bot states
         this.gameState.playerDead = false;
         this.gameState.botDead = false;
+        this.gameState.player.body.enable = true;
+        this.gameState.bot.body.enable = true;
     
         // Respawn entities
         this.respawnEntity(this.gameState.player, 'player');
@@ -894,8 +919,35 @@ class GameScene extends Phaser.Scene {
         if (this.gameState.timerEvent) this.gameState.timerEvent.remove();
         this.gameState.timerEvent = this.time.addEvent({ delay: CONSTANTS.GAME_DURATION, callback: this.onTimerEnd, callbackScope: this });
     
+        // Restart shield timer
+        if (this.gameState.shieldTimer) this.gameState.shieldTimer.remove();
+        this.gameState.shieldTimer = this.time.addEvent({
+            delay: 30000,
+            callback: this.spawnShieldPowerup,
+            callbackScope: this,
+            loop: true
+        });
+    
         // Ensure bot movement is restarted
         this.createBotMovement();
+    
+        // Remove any existing shields
+        if (this.gameState.playerShieldSprite) {
+            this.gameState.playerShieldSprite.destroy();
+            this.gameState.playerShielded = false;
+        }
+        if (this.gameState.botShieldSprite) {
+            this.gameState.botShieldSprite.destroy();
+            this.gameState.botShielded = false;
+        }
+    
+        // Ensure the score is reset in the game state
+        this.gameState.playerScore = 0;
+        this.gameState.botScore = 0;
+    
+        // Update the score display
+        this.gameState.playerScoreText.setText('Player Score: 0');
+        this.gameState.botScoreText.setText('Bot Score: 0');
     }
 
     returnToMainMenu() {

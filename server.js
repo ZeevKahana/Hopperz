@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
+const path = require('path');
 const app = express();
 
 // MongoDB connection string
@@ -24,6 +25,14 @@ const User = mongoose.model('User', {
 
 // Middleware to parse JSON bodies
 app.use(express.json());
+
+// Serve static files from the current directory
+app.use(express.static(__dirname));
+
+// Serve hopz.html for the root route
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'hopz.html'));
+});
 
 // Register route
 app.post('/api/register', async (req, res) => {
