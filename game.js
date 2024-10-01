@@ -8,6 +8,221 @@ const CONSTANTS = {
     GAME_DURATION: 3 * 60 * 1000
 };
 
+
+class LoginScene extends Phaser.Scene {
+    constructor() {
+        super('LoginScene');
+        this.users = [];
+        this.music = null;
+        this.musicReady = false;
+        this.debugText = null;
+        this.audioEnabled = true;
+    }
+
+    preload() {
+        this.load.html('loginform', 'assets/loginform.html');
+        this.load.image('loginBackground', 'assets/login_background.png');
+        this.load.audio('loginSoundtrack', 'assets/login_soundtrack.mp3');
+        
+        const loadingText = this.add.text(400, 300, 'Loading...', { fontSize: '32px', fill: '#fff' });
+        loadingText.setOrigin(0.5);
+
+        this.load.on('complete', () => {
+            loadingText.destroy();
+            this.setupMusic();
+        });
+    }
+
+    create() {
+        this.loadUsers();
+        this.add.image(400, 300, 'loginBackground');
+
+        const loginForm = this.add.dom(400, 300).createFromCache('loginform');
+        loginForm.setVisible(true).setScale(1.35).setOrigin(0.5);  
+
+        loginForm.addListener('click');
+        loginForm.on('click', (event) => {
+            if (event.target.name === 'loginButton') {
+                this.login(loginForm.getChildByName('email').value, loginForm.getChildByName('password').value);
+            } else if (event.target.name === 'registerButton') {
+                this.register(loginForm.getChildByName('email').value, loginForm.getChildByName('password').value);
+            } else if (event.target.name === 'deleteButton') {
+                this.deleteUser(loginForm.getChildByName('email').value);
+            }
+        });
+
+        this.updateUserList();
+
+        this.createAudioToggle();
+
+        this.debugText = this.add.text(10, 40, 'Debug Info', { fontSize: '16px', fill: '#fff' });
+        this.updateDebugText();
+
+        // Add listener for any click on the game
+        this.input.on('pointerdown', () => this.handleUserInteraction());
+    }
+
+    createAudioToggle() {
+        const toggleText = this.audioEnabled ? 'Disable Audio' : 'Enable Audio';
+        this.audioToggle = this.add.text(10, 10, toggleText, { 
+            fontSize: '18px', 
+            fill: '#fff', 
+            backgroundColor: '#333', 
+            padding: { x: 10, y: 5 } 
+        })
+        .setInteractive();
+
+        this.audioToggle.on('pointerdown', () => {
+            this.toggleAudio();
+        });
+    }
+
+    setupMusic() {
+        this.music = this.sound.add('loginSoundtrack', { loop: true, volume: 0.5 });
+        this.musicReady = true;
+        this.updateDebugText("Music setup complete");
+    }
+
+    handleUserInteraction() {
+        this.tryPlayMusic();
+    }
+
+    tryPlayMusic() {
+        if (this.musicReady && this.audioEnabled && this.music && !this.music.isPlaying) {
+            this.music.play();
+            this.updateDebugText("Music started playing");
+        } else if (!this.musicReady) {
+            this.updateDebugText("Music not ready yet");
+        } else if (!this.audioEnabled) {
+            this.updateDebugText("Audio is disabled");
+        } else if (this.music && this.music.isPlaying) {
+            this.updateDebugText("Music is already playing");
+        }
+    }
+
+    stopMusic() {
+        if (this.music && this.music.isPlaying) {
+            this.music.stop();
+            this.updateDebugText("Music stopped");
+        }
+    }
+
+    toggleAudio() {
+        this.audioEnabled = !this.audioEnabled;
+        this.audioToggle.setText(this.audioEnabled ? 'Disable Audio' : 'Enable Audio');
+        if (this.audioEnabled) {
+            this.tryPlayMusic();
+        } else {
+            this.stopMusic();
+        }
+        this.updateDebugText(`Audio ${this.audioEnabled ? 'enabled' : 'disabled'}`);
+    }
+
+    updateDebugText(message) {
+        if (this.debugText) {
+            this.debugText.setText([
+                `Music Ready: ${this.musicReady}`,
+                `Music Playing: ${this.music ? this.music.isPlaying : 'N/A'}`,
+                `Audio Enabled: ${this.audioEnabled}`,
+                `Last Action: ${message || 'None'}`
+            ]);
+        }
+    }
+
+    loadUsers() {
+        const savedUsers = localStorage.getItem('users');
+        this.users = savedUsers ? JSON.parse(savedUsers) : [];
+    }
+
+    saveUsers() {
+        localStorage.setItem('users', JSON.stringify(this.users));
+    }
+
+    login(email, password) {
+        // Email validation regex
+        const emailRegex = /\S+@\S+\.\S+/;
+        
+        // Validate email
+        if (!emailRegex.test(email)) {
+            alert('Invalid email format. Please use a valid email address.');
+            return;
+        }
+
+        const user = this.users.find(u => u.email === email && u.password === password);
+        if (user) {
+            console.log('Login successful');
+            this.stopMusic();  // Stop the music before changing scenes
+            this.scene.start('MainMenu');
+        } else {
+            alert('Invalid email or password.');
+        }
+    }
+
+    stopMusic() {
+        if (this.music && this.music.isPlaying) {
+            this.music.stop();
+            this.updateDebugText("Music stopped");
+        }
+    }
+
+    register(email, password) {
+        // Email validation regex
+        const emailRegex = /\S+@\S+\.\S+/;
+        
+        // Validate email
+        if (!emailRegex.test(email)) {
+            alert('Invalid email format. Please use a valid email address.');
+            return;
+        }
+
+        // Validate password length
+        if (password.length < 6) {
+            alert('Password must be at least 6 characters long.');
+            return;
+        }
+
+        // Check if user already exists
+        if (this.users.some(u => u.email === email)) {
+            alert('User already exists.');
+            return;
+        }
+
+        // If all validations pass, register the user
+        this.users.push({ email, password });
+        this.saveUsers(); // Assuming you have a method to save users to localStorage
+        alert('Registration successful. You can now log in.');
+        this.updateUserList(); // Update the displayed user list
+    }
+
+    deleteUser(email) {
+        const index = this.users.findIndex(u => u.email === email);
+        if (index !== -1) {
+            this.users.splice(index, 1);
+            this.saveUsers();
+            alert('User deleted successfully.');
+            this.updateUserList();
+        } else {
+            alert('User not found.');
+        }
+    }
+
+    updateUserList() {
+        // Remove existing user list if it exists
+        if (this.userList) {
+            this.userList.destroy();
+        }
+
+        // Create a new user list
+        let userListText = 'Registered Users:\n';
+        this.users.forEach(user => {
+            userListText += `${user.email}\n`;
+        });
+
+        this.userList = this.add.text(10, 50, userListText, { fontSize: '16px', fill: '#fff' });
+    }
+}
+
+
 class MainMenuScene extends Phaser.Scene {
     constructor() {
         super('MainMenu');
@@ -709,23 +924,39 @@ class GameScene extends Phaser.Scene {
 
     
 }
-const config = {
-    type: Phaser.AUTO, // Choose WebGL if available, otherwise use Canvas
-    width: 800, // Game width
-    height: 600, // Game height
-    physics: {
-        default: 'arcade',
-        arcade: {
-            gravity: { y: 2000 },
-            debug: false // Set to true if you want to see the physics bodies
+window.onload = function() {
+    const config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 600,
+        parent: 'phaser-game',
+        dom: {
+            createContainer: true
+        },
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 2000 },
+                debug: false
+            }
+        },
+        scene: [LoginScene, MainMenuScene, GameScene],
+        audio: {
+            disableWebAudio: true
+        },
+        render: {
+            pixelArt: false,
+            antialias: true
+        },
+        backgroundColor: '#000000'
+    };
+
+    const game = new Phaser.Game(config);
+
+    // Initialize sound after user interaction
+    document.addEventListener('click', function() {
+        if (game.sound && game.sound.context && game.sound.context.state === 'suspended') {
+            game.sound.context.resume();
         }
-    },
-    scene: [MainMenuScene, GameScene], // Add all your scenes here
-    parent: 'phaser-game' // The HTML element to inject the game canvas
-};
-
-
-// End of GameScene class
-
-// This line should be outside of any class definition
-const game = new Phaser.Game(config);
+    }, false);
+}
