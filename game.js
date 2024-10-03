@@ -356,7 +356,16 @@ class GameScene extends Phaser.Scene {
         this.load.image('sky', 'assets/sky.png');
         this.load.image('platform', 'assets/platform.png');
         this.load.image('cloud', 'assets/cloud.png');
-        this.load.spritesheet('dude', 'assets/dude.png', { frameWidth: 32, frameHeight: 48 });
+        this.load.image('rabbit-standing', 'assets/rabbit/standing.png');
+        this.load.image('rabbit-jumpingstraight', 'assets/rabbit/jumpingstraight.png');
+        this.load.image('rabbit-lookingright', 'assets/rabbit/lookingright.png');
+        this.load.image('rabbit-walkingright1', 'assets/rabbit/walkingright1.png');
+        this.load.image('rabbit-walkingright2', 'assets/rabbit/walkingright2.png');
+        this.load.image('rabbit-jumpingright', 'assets/rabbit/jumpingright.png');
+        this.load.image('rabbit-lookingleft', 'assets/rabbit/lookingleft.png');
+        this.load.image('rabbit-walkingleft1', 'assets/rabbit/walkingleft1.png');
+        this.load.image('rabbit-walkingleft2', 'assets/rabbit/walkingleft2.png');
+        this.load.image('rabbit-jumpingleft', 'assets/rabbit/jumpingleft.png');
         this.load.image('button', 'assets/button.png');
         this.load.image('returnMenuButton', 'assets/Return-Menu-Button.png');
         this.load.audio('gameSoundtrack', 'assets/game_soundtrack.mp3');
@@ -373,6 +382,12 @@ class GameScene extends Phaser.Scene {
         this.createCloud();
         this.createColliders();
         this.createBotMovement();
+        this.gameState.player.setSize(this.gameState.player.width * 0.8, this.gameState.player.height);
+    this.gameState.player.setOffset(this.gameState.player.width * 0.1, 0);
+
+    // Apply the same adjustment to the bot
+    this.gameState.bot.setSize(this.gameState.bot.width * 0.8, this.gameState.bot.height);
+    this.gameState.bot.setOffset(this.gameState.bot.width * 0.1, 0);
         this.gameState.timerEvent = this.time.addEvent({ delay: CONSTANTS.GAME_DURATION, callback: this.onTimerEnd, callbackScope: this });
         this.gameState.gameSoundtrack = this.sound.add('gameSoundtrack', { loop: true });
         this.gameState.gameSoundtrack.play();
@@ -393,13 +408,25 @@ class GameScene extends Phaser.Scene {
             this.updateHitboxes();
             this.checkBotPosition();
             this.updateTimer();
+    
+            // Keep player within screen boundaries
+            this.gameState.player.x = Phaser.Math.Clamp(this.gameState.player.x, 
+                this.gameState.player.width / 2, 
+                this.sys.game.config.width - this.gameState.player.width / 2);
+    
+            // Keep bot within screen boundaries
+            this.gameState.bot.x = Phaser.Math.Clamp(this.gameState.bot.x, 
+                this.gameState.bot.width / 2, 
+                this.sys.game.config.width - this.gameState.bot.width / 2);
         }
+    
         if (this.gameState.playerShielded && this.gameState.playerShieldSprite) {
             this.gameState.playerShieldSprite.setPosition(this.gameState.player.x, this.gameState.player.y);
         }
         if (this.gameState.botShielded && this.gameState.botShieldSprite) {
             this.gameState.botShieldSprite.setPosition(this.gameState.bot.x, this.gameState.bot.y);
         }
+    
         if (this.gameState.shieldPowerup && this.gameState.shieldPowerup.active) {
             const distToPlayer = Phaser.Math.Distance.Between(
                 this.gameState.player.x, this.gameState.player.y,
@@ -411,6 +438,7 @@ class GameScene extends Phaser.Scene {
             );
             console.log(`Distance to Player: ${distToPlayer.toFixed(2)}, Distance to Bot: ${distToBot.toFixed(2)}`);
         }
+    
         if (this.gameState.shieldPowerup && this.gameState.shieldPowerup.active) {
             const isOverlapping = Phaser.Geom.Intersects.RectangleToRectangle(
                 this.gameState.player.getBounds(),
@@ -443,20 +471,79 @@ class GameScene extends Phaser.Scene {
     }
 
     createPlayer() {
-        this.gameState.player = this.physics.add.sprite(100, 450, 'dude').setBounce(0.1).setCollideWorldBounds(true);
-        this.anims.create({ key: 'left', frames: this.anims.generateFrameNumbers('dude', { start: 0, end: 3 }), frameRate: 10, repeat: -1 });
-        this.anims.create({ key: 'turn', frames: [{ key: 'dude', frame: 4 }], frameRate: 20 });
-        this.anims.create({ key: 'right', frames: this.anims.generateFrameNumbers('dude', { start: 5, end: 8 }), frameRate: 10, repeat: -1 });
+        const spawnPoint = this.getRandomSpawnPoint();
+        this.gameState.player = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, 'rabbit-standing')
+            .setBounce(0.1)
+            .setCollideWorldBounds(true);
+    
+
+            this.gameState.player.setCollideWorldBounds(true);
+            this.gameState.player.body.onWorldBounds = true;
+
+        // Create animations
+        this.anims.create({
+            key: 'left',
+            frames: [
+                { key: 'rabbit-lookingleft' },
+                { key: 'rabbit-lookingleft' },
+                { key: 'rabbit-walkingleft1' },
+                { key: 'rabbit-jumpingleft' },
+                { key: 'rabbit-walkingleft2' }
+            ],
+            frameRate: 17,
+            repeat: -1
+        });
+    
+        this.anims.create({
+            key: 'right',
+            frames: [
+                { key: 'rabbit-lookingright' },
+                { key: 'rabbit-lookingright' },
+                { key: 'rabbit-walkingright1' },
+                { key: 'rabbit-jumpingright' },
+                { key: 'rabbit-walkingright2' }
+            ],
+            frameRate: 17,
+            repeat: -1
+        });
+    
+        this.anims.create({
+            key: 'idle',
+            frames: [{ key: 'rabbit-standing' }],
+            frameRate: 10,
+            repeat: 0
+            
+        });
+    
+        // Set up cursor keys for input
         this.gameState.cursors = this.input.keyboard.createCursorKeys();
-        this.gameState.playerHead = this.createHitbox(this.gameState.player, -this.gameState.player.height / 2);
-        this.gameState.playerFeet = this.createHitbox(this.gameState.player, this.gameState.player.height / 2);
+    
+        // Create hitboxes for the player
+        this.gameState.playerHead = this.createHitbox(this.gameState.player, -this.gameState.player.height / 4);
+        this.gameState.playerFeet = this.createHitbox(this.gameState.player, this.gameState.player.height / 4);
     }
 
     createBot() {
-        this.gameState.bot = this.physics.add.sprite(400, 300, 'dude').setBounce(0.1).setCollideWorldBounds(true);
+        const spawnPoint = this.getRandomSpawnPoint();
+        this.gameState.bot = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, 'rabbit-standing')
+            .setBounce(0.1)
+            .setCollideWorldBounds(true);
+
+            this.gameState.bot.setCollideWorldBounds(true);
+            this.gameState.bot.body.onWorldBounds = true;
+        // Ensure the bot is on the ground
+        this.gameState.bot.setOrigin(0.5, 1);
+    
         this.gameState.botHead = this.createHitbox(this.gameState.bot, -this.gameState.bot.height / 2);
-        this.gameState.botFeet = this.createHitbox(this.gameState.bot, this.gameState.bot.height / 2);
+        this.gameState.botFeet = this.createHitbox(this.gameState.bot, 0);  // Adjust to be at the bottom of the sprite
     }
+
+    getRandomSpawnPoint() {
+        const x = Phaser.Math.Between(50, 750);
+        const y = Phaser.Math.Between(50, 550);
+        return { x, y };
+    }
+
 
     createHitbox(entity, offsetY) {
         const hitbox = this.physics.add.sprite(entity.x, entity.y + offsetY, null).setOrigin(0.5, 0.5);
@@ -494,18 +581,62 @@ class GameScene extends Phaser.Scene {
     }
 
     handlePlayerMovement() {
-        if (this.gameState.cursors.left.isDown) {
+        const onGround = this.gameState.player.body.touching.down;
+        const isJumping = !onGround;
+        const atRightEdge = this.gameState.player.x >= this.sys.game.config.width - this.gameState.player.width / 2;
+        const atLeftEdge = this.gameState.player.x <= this.gameState.player.width / 2;
+    
+        // Add a cooldown for animation changes
+        if (!this.lastAnimationChangeTime) {
+            this.lastAnimationChangeTime = 0;
+        }
+        const currentTime = this.time.now;
+        const canChangeAnimation = currentTime - this.lastAnimationChangeTime > 100; // 100ms cooldown
+    
+        if (this.gameState.cursors.left.isDown && !atLeftEdge) {
             this.gameState.player.setVelocityX(-300);
-            this.gameState.player.anims.play('left', true);
-        } else if (this.gameState.cursors.right.isDown) {
+            if (onGround && canChangeAnimation) {
+                this.gameState.player.anims.play('left', true);
+                this.lastAnimationChangeTime = currentTime;
+            } else if (isJumping) {
+                this.gameState.player.setTexture('rabbit-jumpingleft');
+            }
+            this.gameState.player.setFlipX(false);
+        } else if (this.gameState.cursors.right.isDown && !atRightEdge) {
             this.gameState.player.setVelocityX(300);
-            this.gameState.player.anims.play('right', true);
+            if (onGround && canChangeAnimation) {
+                this.gameState.player.anims.play('right', true);
+                this.lastAnimationChangeTime = currentTime;
+            } else if (isJumping) {
+                this.gameState.player.setTexture('rabbit-jumpingright');
+            }
+            this.gameState.player.setFlipX(false);
         } else {
             this.gameState.player.setVelocityX(0);
-            this.gameState.player.anims.play('turn');
+            if (onGround && canChangeAnimation) {
+                this.gameState.player.anims.play('idle', true);
+                this.lastAnimationChangeTime = currentTime;
+            } else if (isJumping) {
+                this.gameState.player.setTexture('rabbit-jumpingstraight');
+            }
         }
-        if (this.gameState.cursors.up.isDown && this.gameState.player.body.touching.down) {
+    
+        if (this.gameState.cursors.up.isDown && onGround) {
             this.gameState.player.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
+        }
+    
+        // Prevent changing to jumping straight sprite when landing
+        if (this.gameState.player.body.velocity.y === 0 && onGround && canChangeAnimation) {
+            if (this.gameState.player.texture.key === 'rabbit-jumpingstraight') {
+                this.gameState.player.anims.play('idle', true);
+                this.lastAnimationChangeTime = currentTime;
+            }
+        }
+    
+        // Stop animations when at screen edges
+        if ((atRightEdge && this.gameState.cursors.right.isDown) || 
+            (atLeftEdge && this.gameState.cursors.left.isDown)) {
+            this.gameState.player.anims.stop();
         }
     }
 
@@ -649,6 +780,31 @@ class GameScene extends Phaser.Scene {
     }
 
     respawnEntity(entity, type) {
+        const spawnPoint = this.getRandomSpawnPoint();
+        entity.setPosition(spawnPoint.x, spawnPoint.y);
+        entity.setVisible(true);
+        entity.body.enable = true;
+        entity.setVelocity(0, 0);
+    
+        if (type === 'bot') {
+            this.gameState.botDead = false;
+            // Remove the existing bot move event
+            if (this.gameState.botMoveEvent) {
+                this.gameState.botMoveEvent.remove();
+            }
+            // Immediately move the bot
+            this.moveBot();
+            // Set up the recurring bot movement
+            this.gameState.botMoveEvent = this.time.addEvent({
+                delay: CONSTANTS.BOT_MOVE_DELAY,
+                callback: this.moveBot,
+                callbackScope: this,
+                loop: true
+            });
+        } else if (type === 'player') {
+            this.gameState.playerDead = false;
+        }
+    
         const MAX_ATTEMPTS = 20;
         let validPosition = false;
         let newPosX, newPosY;
@@ -657,7 +813,6 @@ class GameScene extends Phaser.Scene {
             newPosX = Phaser.Math.Between(50, 750);
             newPosY = Phaser.Math.Between(50, 550);
     
-            // Check if the new position overlaps with any platform
             let overlapping = false;
             this.gameState.platforms.children.entries.forEach((platform) => {
                 if (Phaser.Geom.Intersects.RectangleToRectangle(
@@ -675,33 +830,11 @@ class GameScene extends Phaser.Scene {
         }
     
         if (!validPosition) {
-            // If no valid position found, place at a predetermined safe spot
             newPosX = 400;
             newPosY = 100;
         }
     
         entity.setPosition(newPosX, newPosY);
-        entity.setVisible(true);
-        entity.body.enable = true;
-        entity.setVelocity(0, 0); // Ensure entity starts stationary
-    
-        if (type === 'bot') {
-            this.gameState.botDead = false;
-            // Immediately move the bot
-            this.moveBot();
-            // Restart bot movement loop
-            if (this.gameState.botMoveEvent) {
-                this.gameState.botMoveEvent.remove();
-            }
-            this.gameState.botMoveEvent = this.time.addEvent({
-                delay: CONSTANTS.BOT_MOVE_DELAY,
-                callback: this.moveBot,
-                callbackScope: this,
-                loop: true
-            });
-        } else if (type === 'player') {
-            this.gameState.playerDead = false;
-        }
     }
 
     moveBot() {
@@ -710,18 +843,16 @@ class GameScene extends Phaser.Scene {
             const newVelocityX = directions[Math.floor(Math.random() * directions.length)];
             this.gameState.bot.setVelocityX(newVelocityX);
     
-            // Only jump if the bot is on the ground
             if (Math.random() > 0.5 && this.gameState.bot.body.touching.down) {
                 this.gameState.bot.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
             }
     
-            // Update animation based on movement
             if (newVelocityX < 0) {
                 this.gameState.bot.anims.play('left', true);
             } else if (newVelocityX > 0) {
                 this.gameState.bot.anims.play('right', true);
             } else {
-                this.gameState.bot.anims.play('turn', true);
+                this.gameState.bot.anims.play('idle', true);
             }
         }
     }
@@ -799,7 +930,7 @@ class GameScene extends Phaser.Scene {
         }
     
         this.gameState.shieldPowerup = this.physics.add.sprite(x, y, 'shieldPowerup');
-        this.gameState.shieldPowerup.setScale(0.17); // Adjust scale as needed
+        this.gameState.shieldPowerup.setScale(0.15); // Adjust scale as needed
         
         // Set a smaller circular collision body
         const collisionRadius = powerupSize / 4; // Decreased collision radius
