@@ -15,3 +15,7 @@ included:
 included:
 -map improved - new tiles and background.
 -bug fixes
+
+10/03/24 - ver 0.15 available
+included:
+new Rabbit sprite for player and bot
