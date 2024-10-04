@@ -19,3 +19,7 @@ included:
 10/03/24 - ver 0.15 available
 included:
 new Rabbit sprite for player and bot
+
+10/04/24 - ver 0.16
+- added bot difficulty easy / medium / hard (still ironing this out)
+- added different controls option in options menu
