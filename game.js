@@ -9,6 +9,247 @@ const CONSTANTS = {
 };
 
 
+class CollisionManager {
+    constructor(scene) {
+        this.scene = scene;
+        this.debugText = scene.add.text(10, 10, 'Debug Info', { fontSize: '16px', fill: '#ffffff' });
+    }
+
+    setupColliders() {
+        const { player, bot, platforms, shieldPowerup } = this.scene.gameState;
+
+        this.scene.physics.add.collider(player, platforms);
+        this.scene.physics.add.collider(bot, platforms);
+
+        this.scene.physics.add.overlap(player, bot, this.handleCharacterCollision, null, this);
+        this.scene.physics.add.overlap(player, shieldPowerup, this.handleShieldCollection, null, this);
+        this.scene.physics.add.overlap(bot, shieldPowerup, this.handleShieldCollection, null, this);
+    }
+
+    handleCharacterCollision(entity1, entity2) {
+        const currentTime = this.scene.time.now;
+        if (currentTime < this.scene.gameState.invulnerableUntil) {
+            this.updateDebugText('Collision ignored: Invulnerable');
+            return;
+        }
+
+        const verticalDistance = entity2.y - entity1.y;
+        const horizontalDistance = Math.abs(entity1.x - entity2.x);
+
+        this.updateDebugText(`Collision detected:
+        Vertical Distance: ${verticalDistance.toFixed(2)}
+        Horizontal Distance: ${horizontalDistance.toFixed(2)}
+        Entity1 (${entity1 === this.scene.gameState.player ? 'Player' : 'Bot'}): y=${entity1.y.toFixed(2)}, vy=${entity1.body.velocity.y.toFixed(2)}
+        Entity2 (${entity2 === this.scene.gameState.player ? 'Player' : 'Bot'}): y=${entity2.y.toFixed(2)}, vy=${entity2.body.velocity.y.toFixed(2)}`);
+
+        if (Math.abs(verticalDistance) < entity1.height * 0.25 && horizontalDistance < entity1.width * 0.8) {
+            this.updateDebugText('Collision ignored: Entities too close horizontally or vertically');
+            return;
+        }
+
+        let killer, victim;
+        if (verticalDistance > 0 && entity1.body.velocity.y >= 0) {
+            killer = entity1;
+            victim = entity2;
+        } else if (verticalDistance < 0 && entity2.body.velocity.y >= 0) {
+            killer = entity2;
+            victim = entity1;
+        } else {
+            this.updateDebugText('Collision ignored: No clear killer/victim');
+            return;
+        }
+
+        this.updateDebugText(`Killer: ${killer === this.scene.gameState.player ? 'Player' : 'Bot'}, Victim: ${victim === this.scene.gameState.player ? 'Player' : 'Bot'}`);
+
+        if (victim === this.scene.gameState.player && this.scene.gameState.playerShielded) {
+            this.scene.removeShield(this.scene.gameState.player);
+            killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
+            this.updateDebugText('Player shield activated');
+        } else if (victim === this.scene.gameState.bot && this.scene.gameState.botShielded) {
+            this.scene.removeShield(this.scene.gameState.bot);
+            killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
+            this.updateDebugText('Bot shield activated');
+        } else {
+            this.scene.handleKill(killer, victim);
+            this.updateDebugText(`Kill handled: ${killer === this.scene.gameState.player ? 'Player' : 'Bot'} killed ${victim === this.scene.gameState.player ? 'Player' : 'Bot'}`);
+        }
+
+        this.scene.gameState.invulnerableUntil = currentTime + 1000;
+    }
+
+    handleShieldCollection(character, shield) {
+        const distance = Phaser.Math.Distance.Between(character.x, character.y, shield.x, shield.y);
+        if (distance < 30) {
+            this.scene.collectShield(character, shield);
+        }
+    }
+
+    updateDebugText(message) {
+        this.debugText.setText(message);
+        console.log(message);  // Also log to console for easier debugging
+    }
+}
+
+
+class BotAI {
+    constructor(scene, bot, player) {
+        this.scene = scene;
+        this.bot = bot;
+        this.player = player;
+        this.difficultyLevel = this.scene.cpuDifficulty || 'normal';
+        this.decisionCooldown = 0;
+        this.currentAction = 'idle';
+        this.targetPosition = null;
+    }
+
+    update(time, delta) {
+        if (this.decisionCooldown > 0) {
+            this.decisionCooldown -= delta;
+            this.executeCurrentAction();
+            return;
+        }
+
+        this.makeDecision();
+        this.executeCurrentAction();
+        this.decisionCooldown = this.getDecisionCooldown();
+    }
+
+    makeDecision() {
+        const playerDistance = Phaser.Math.Distance.Between(this.bot.x, this.bot.y, this.player.x, this.player.y);
+        const onSamePlatform = this.isOnSamePlatform();
+        const canJumpToPlayer = this.canJumpTo(this.player.x, this.player.y);
+        const powerupAvailable = this.scene.gameState.shieldPowerup && this.scene.gameState.shieldPowerup.active;
+
+        if (powerupAvailable && Math.random() < this.getPowerupChance()) {
+            this.currentAction = 'getPowerup';
+            this.targetPosition = { x: this.scene.gameState.shieldPowerup.x, y: this.scene.gameState.shieldPowerup.y };
+        } else if (canJumpToPlayer && Math.random() < this.getAggressionChance()) {
+            this.currentAction = 'jumpAttack';
+            this.targetPosition = { x: this.player.x, y: this.player.y };
+        } else if (onSamePlatform && playerDistance < 200) {
+            if (Math.random() < 0.7) {
+                this.currentAction = 'chase';
+            } else {
+                this.currentAction = 'retreat';
+            }
+        } else {
+            if (Math.random() < 0.6) {
+                this.currentAction = 'moveToPlayer';
+            } else {
+                this.currentAction = 'randomMove';
+                this.targetPosition = this.getRandomPosition();
+            }
+        }
+    }
+
+    executeCurrentAction() {
+        switch (this.currentAction) {
+            case 'idle':
+                this.bot.setVelocityX(0);
+                break;
+            case 'chase':
+            case 'moveToPlayer':
+                this.moveTowards(this.player.x, this.player.y);
+                break;
+            case 'retreat':
+                this.moveAway(this.player.x, this.player.y);
+                break;
+            case 'jumpAttack':
+                this.moveTowards(this.targetPosition.x, this.targetPosition.y);
+                if (this.bot.body.touching.down) {
+                    this.bot.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
+                }
+                break;
+            case 'getPowerup':
+                this.moveTowards(this.targetPosition.x, this.targetPosition.y);
+                if (Math.abs(this.bot.x - this.targetPosition.x) < 10 && this.bot.body.touching.down) {
+                    this.bot.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
+                }
+                break;
+            case 'randomMove':
+                this.moveTowards(this.targetPosition.x, this.targetPosition.y);
+                break;
+        }
+
+        this.avoidFallingOffPlatform();
+    }
+
+    moveTowards(x, y) {
+        const direction = x < this.bot.x ? -1 : 1;
+        this.bot.setVelocityX(direction * 300);
+        this.updateBotAnimation(direction);
+    }
+
+    moveAway(x, y) {
+        const direction = x < this.bot.x ? 1 : -1;
+        this.bot.setVelocityX(direction * 300);
+        this.updateBotAnimation(direction);
+    }
+
+    updateBotAnimation(direction) {
+        if (direction < 0) {
+            this.bot.anims.play('botLeft', true);
+        } else {
+            this.bot.anims.play('botRight', true);
+        }
+    }
+
+    avoidFallingOffPlatform() {
+        if (this.bot.body.touching.down) {
+            const aheadX = this.bot.x + (this.bot.body.velocity.x > 0 ? 20 : -20);
+            const groundBelow = this.scene.physics.overlapRect(aheadX, this.bot.y, 5, 50, false, true, this.scene.gameState.platforms);
+            
+            if (!groundBelow) {
+                this.bot.setVelocityX(-this.bot.body.velocity.x);
+                this.updateBotAnimation(this.bot.body.velocity.x > 0 ? 1 : -1);
+            }
+        }
+    }
+
+    isOnSamePlatform() {
+        return Math.abs(this.bot.y - this.player.y) < 10 && this.bot.body.touching.down && this.player.body.touching.down;
+    }
+
+    canJumpTo(x, y) {
+        const distance = Math.abs(this.bot.x - x);
+        const heightDifference = this.bot.y - y;
+        return distance < 150 && heightDifference > 0 && heightDifference < 200;
+    }
+
+    getRandomPosition() {
+        const x = Phaser.Math.Between(50, this.scene.sys.game.config.width - 50);
+        const y = this.bot.y;
+        return { x, y };
+    }
+
+    getDecisionCooldown() {
+        switch (this.difficultyLevel) {
+            case 'easy': return Phaser.Math.Between(500, 1000);
+            case 'normal': return Phaser.Math.Between(300, 700);
+            case 'hard': return Phaser.Math.Between(100, 500);
+            default: return 500;
+        }
+    }
+
+    getPowerupChance() {
+        switch (this.difficultyLevel) {
+            case 'easy': return 0.3;
+            case 'normal': return 0.5;
+            case 'hard': return 0.7;
+            default: return 0.5;
+        }
+    }
+
+    getAggressionChance() {
+        switch (this.difficultyLevel) {
+            case 'easy': return 0.3;
+            case 'normal': return 0.5;
+            case 'hard': return 0.8;
+            default: return 0.5;
+        }
+    }
+}
+
 class LoginScene extends Phaser.Scene {
     constructor() {
         super('LoginScene');
@@ -225,74 +466,233 @@ class LoginScene extends Phaser.Scene {
 
 class MainMenuScene extends Phaser.Scene {
     constructor() {
-        super('MainMenu');
-        this.isOptionsOpen = false;
+      super('MainMenu');
+      this.isOptionsOpen = false;
+      this.difficultyButtons = [];
+      this.menuSoundtrack = null;
+      this.controlSchemes = ['Arrows', 'WASD'];
+      this.currentControlScheme = 'Arrows';
+      this.startButton = null;
+      this.optionsButton = null;
+      this.selectedMap = 'sky'; // Default selected map
+      this.mapSelectionActive = false;
     }
-
+  
     preload() {
-        this.load.image('menuBackground', 'assets/menu_background.png');
-        this.load.image('startButton', 'assets/start_button.png');
-        this.load.audio('menuSoundtrack', 'assets/menu_soundtrack.mp3');
-        this.load.image('optionsButton', 'assets/options-button.png');
+      this.load.image('menuBackground', 'assets/menu_background.png');
+      this.load.image('startButton', 'assets/start_button.png');
+      this.load.audio('menuSoundtrack', 'assets/menu_soundtrack.mp3');
+      this.load.image('optionsButton', 'assets/options-button.png');
+      this.load.image('mapSelectButton', 'assets/map-select-button.png');
+      // Load map preview images
+      this.load.image('sky_preview', 'assets/sky_preview.png');
+      this.load.image('city_preview', 'assets/city_preview.png');
+    }
+  
+    create() {
+      this.add.image(400, 300, 'menuBackground').setScale(1.28);
+  
+      this.startButton = this.add.image(402, 385, 'startButton')
+        .setInteractive()
+        .setScale(0.85);
+  
+      this.startButton.on('pointerdown', () => this.showDifficultySelection());
+  
+      this.optionsButton = this.add.image(600, 385, 'optionsButton')
+        .setInteractive()
+        .setScale(0.10);
+  
+      this.optionsButton.on('pointerdown', () => {
+        if (!this.isOptionsOpen) {
+          this.showOptionsPage();
+        }
+      });
+  
+      this.mapSelectButton = this.add.image(700, 100, 'mapSelectButton')
+        .setInteractive()
+        .setScale(1);
+  
+      this.mapSelectButton.on('pointerdown', () => {
+        if (!this.mapSelectionActive) {
+          this.showMapSelection();
+        }
+      });
+  
+      this.mapText = this.add.text(400, 500, `Selected Map: ${this.selectedMap}`, {
+        fontSize: '24px',
+        fill: '#fff'
+      }).setOrigin(0.5);
+  
+      this.menuSoundtrack = this.sound.add('menuSoundtrack', { loop: true });
+      this.playMenuSoundtrack();
+    }
+  
+    showMapSelection() {
+      this.mapSelectionActive = true;
+      const maps = ['sky', 'city'];
+      this.mapButtons = [];
+      
+      const overlay = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.7);
+      this.mapButtons.push(overlay);
+  
+      const title = this.add.text(400, 100, 'Select a Map', {
+        fontSize: '32px',
+        fill: '#fff'
+      }).setOrigin(0.5);
+      this.mapButtons.push(title);
+  
+      maps.forEach((map, index) => {
+        const x = 300 + index * 200; // Position maps side by side
+        const y = 300; // Centered vertically
+  
+        const preview = this.add.image(x, y, `${map}_preview`)
+          .setScale(0.4) // Adjust scale as needed
+          .setInteractive();
+        const text = this.add.text(x, y + 100, map, {
+          fontSize: '24px',
+          fill: '#fff'
+        }).setOrigin(0.5);
+  
+        preview.on('pointerdown', () => this.selectMap(map));
+        preview.on('pointerover', () => {
+          preview.setScale(0.45); // Slightly enlarge on hover
+          text.setStyle({ fill: '#ff0' });
+        });
+        preview.on('pointerout', () => {
+          preview.setScale(0.4); // Return to original size
+          text.setStyle({ fill: '#fff' });
+        });
+  
+        this.mapButtons.push(preview, text);
+      });
+  
+      const backButton = this.add.text(400, 500, 'Back', {
+        fontSize: '24px',
+        fill: '#fff',
+        backgroundColor: '#000',
+        padding: { x: 15, y: 8 }
+      }).setOrigin(0.5).setInteractive();
+  
+      backButton.on('pointerdown', () => this.hideMapSelection());
+      backButton.on('pointerover', () => backButton.setStyle({ fill: '#ff0' }));
+      backButton.on('pointerout', () => backButton.setStyle({ fill: '#fff' }));
+  
+      this.mapButtons.push(backButton);
+    }
+  
+    hideMapSelection() {
+      if (this.mapButtons) {
+        this.mapButtons.forEach(button => button.destroy());
+        this.mapButtons = null;
+      }
+      this.mapSelectionActive = false;
+    }
+  
+    selectMap(map) {
+      this.selectedMap = map;
+      this.mapText.setText(`Selected Map: ${this.selectedMap}`);
+      this.hideMapSelection();
     }
 
-    create() {
-        this.add.image(400, 300, 'menuBackground').setScale(1.28);
-
-        const startButton = this.add.image(402, 385, 'startButton')
-            .setInteractive()
-            .setScale(0.85);
-
-        startButton.on('pointerdown', () => {
-            this.sound.stopAll();
-            this.scene.start('GameScene');
-        });
-        const optionsButton = this.add.image(600, 385, 'optionsButton')
-             .setInteractive()
-             .setScale(0.10);
-
-        optionsButton.on('pointerdown', () => {
-            if (!this.isOptionsOpen) {
-                this.showOptionsPage();
+    showDifficultySelection() {
+        // Hide or disable the start and options buttons
+        this.children.list.forEach(child => {
+            if (child instanceof Phaser.GameObjects.Image) {
+                child.setVisible(false);
             }
         });
-        this.sound.play('menuSoundtrack', { loop: true });
+
+        // Create difficulty buttons
+        const difficulties = ['Easy', 'Normal', 'Hard'];
+        difficulties.forEach((diff, index) => {
+            const button = this.add.text(400, 250 + index * 70, diff, { 
+                fontSize: '32px', 
+                fill: '#fff',
+                backgroundColor: '#000',
+                padding: { x: 20, y: 10 }
+            }).setOrigin(0.5).setInteractive();
+
+            button.on('pointerdown', () => this.startGame(diff.toLowerCase()));
+            button.on('pointerover', () => button.setStyle({ fill: '#ff0' }));
+            button.on('pointerout', () => button.setStyle({ fill: '#fff' }));
+
+            this.difficultyButtons.push(button);
+        });
+
+        // Add a back button
+        const backButton = this.add.text(400, 500, 'Back', { 
+            fontSize: '24px', 
+            fill: '#fff',
+            backgroundColor: '#000',
+            padding: { x: 15, y: 8 }
+        }).setOrigin(0.5).setInteractive();
+
+        backButton.on('pointerdown', () => this.hideDifficultySelection());
+        backButton.on('pointerover', () => backButton.setStyle({ fill: '#ff0' }));
+        backButton.on('pointerout', () => backButton.setStyle({ fill: '#fff' }));
+
+        this.difficultyButtons.push(backButton);
+    }
+
+    hideDifficultySelection() {
+        // Show the start and options buttons again
+        this.children.list.forEach(child => {
+            if (child instanceof Phaser.GameObjects.Image) {
+                child.setVisible(true);
+            }
+        });
+
+        // Remove difficulty buttons
+        this.difficultyButtons.forEach(button => button.destroy());
+        this.difficultyButtons = [];
+    }
+
+    playMenuSoundtrack() {
+        if (this.menuSoundtrack && !this.menuSoundtrack.isPlaying) {
+            this.menuSoundtrack.play();
+        }
+    }
+
+    stopMenuSoundtrack() {
+        if (this.menuSoundtrack && this.menuSoundtrack.isPlaying) {
+            this.menuSoundtrack.stop();
+        }
+    }
+
+    startGame(difficulty) {
+        this.stopMenuSoundtrack();
+        this.scene.start('GameScene', { difficulty: difficulty, map: this.selectedMap });
     }
 
     showOptionsPage() {
         if (this.isOptionsOpen) return;
         this.isOptionsOpen = true;
     
-        // Create a container to hold all options elements
+        this.startButton.disableInteractive();
+        this.optionsButton.disableInteractive();
+    
         const optionsContainer = this.add.container(0, 0);
     
-        // Create a semi-transparent background
         const bg = this.add.rectangle(400, 300, 400, 300, 0x000000, 0.7);
         optionsContainer.add(bg);
     
-        // Add a title
         const title = this.add.text(400, 200, 'Options', { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
         optionsContainer.add(title);
     
-        // Get the current volume (assuming it's between 0 and 1)
         const currentVolume = Math.round(this.sound.volume * 100);
     
-        // Add volume text
         const volumeText = this.add.text(250, 250, `Volume: ${currentVolume}`, { fontSize: '24px', fill: '#fff' });
         optionsContainer.add(volumeText);
     
-        // Add volume slider
         const slider = this.add.rectangle(400, 300, 200, 10, 0xffffff);
         optionsContainer.add(slider);
     
-        // Calculate initial slider button position based on current volume
         const initialSliderX = 300 + (currentVolume * 2);
         const sliderButton = this.add.circle(initialSliderX, 300, 15, 0xff0000)
             .setInteractive()
             .setDepth(1);
         optionsContainer.add(sliderButton);
     
-        // Make the slider button draggable
         this.input.setDraggable(sliderButton);
     
         this.input.on('drag', (pointer, gameObject, dragX) => {
@@ -303,7 +703,19 @@ class MainMenuScene extends Phaser.Scene {
             this.sound.setVolume(volume / 100);
         });
     
-        // Add a close button
+        // Create an interactive text for control scheme selection
+        const controlText = this.add.text(400, 365, `Controls: ${this.currentControlScheme}`, { 
+            fontSize: '24px', 
+            fill: '#fff',
+            backgroundColor: '#333',
+            padding: { x: 10, y: 5 }
+        }).setOrigin(0.5).setInteractive();
+        optionsContainer.add(controlText);
+    
+        controlText.on('pointerdown', () => {
+            this.changeControlScheme(controlText);
+        });
+    
         const closeButton = this.add.text(550, 170, 'X', { fontSize: '24px', fill: '#fff' })
             .setInteractive();
         optionsContainer.add(closeButton);
@@ -311,16 +723,33 @@ class MainMenuScene extends Phaser.Scene {
         closeButton.on('pointerdown', () => {
             optionsContainer.destroy();
             this.isOptionsOpen = false;
+            this.startButton.setInteractive();
+            this.optionsButton.setInteractive();
         });
-      }
+    }
+
+    changeControlScheme(controlText) {
+        const currentIndex = this.controlSchemes.indexOf(this.currentControlScheme);
+        const newIndex = (currentIndex + 1) % this.controlSchemes.length;
+        this.currentControlScheme = this.controlSchemes[newIndex];
+        controlText.setText(`Controls: ${this.currentControlScheme}`);
+        
+        localStorage.setItem('controlScheme', this.currentControlScheme);
+    }
 }
 
 class GameScene extends Phaser.Scene {
     constructor() {
         super('GameScene');
+        this.lastTime = 0;
+        this.currentMap = 'sky'; 
     }
 
-    init() {
+    init(data) {
+        if (data && data.difficulty) {
+            this.cpuDifficulty = data.difficulty;
+        }
+        this.currentMap = data.map || 'sky'; 
         this.gameState = {
             player: null,
             bot: null,
@@ -356,16 +785,20 @@ class GameScene extends Phaser.Scene {
         this.load.image('sky', 'assets/sky.png');
         this.load.image('platform', 'assets/platform.png');
         this.load.image('cloud', 'assets/cloud.png');
-        this.load.image('rabbit-standing', 'assets/rabbit/standing.png');
-        this.load.image('rabbit-jumpingstraight', 'assets/rabbit/jumpingstraight.png');
-        this.load.image('rabbit-lookingright', 'assets/rabbit/lookingright.png');
-        this.load.image('rabbit-walkingright1', 'assets/rabbit/walkingright1.png');
-        this.load.image('rabbit-walkingright2', 'assets/rabbit/walkingright2.png');
-        this.load.image('rabbit-jumpingright', 'assets/rabbit/jumpingright.png');
-        this.load.image('rabbit-lookingleft', 'assets/rabbit/lookingleft.png');
-        this.load.image('rabbit-walkingleft1', 'assets/rabbit/walkingleft1.png');
-        this.load.image('rabbit-walkingleft2', 'assets/rabbit/walkingleft2.png');
-        this.load.image('rabbit-jumpingleft', 'assets/rabbit/jumpingleft.png');
+        this.load.image('city', 'assets/city.png');
+        this.load.image('building', 'assets/building3.png');
+        this.load.image('sky_preview', 'assets/sky_preview.png');
+        this.load.image('city_preview', 'assets/city_preview.png');
+        this.load.image('rabbit-standing', 'assets/rabbit/white/standing.png');
+        this.load.image('rabbit-jumpingstraight', 'assets/rabbit/white/jumpingstraight.png');
+        this.load.image('rabbit-lookingright', 'assets/rabbit/white/lookingright.png');
+        this.load.image('rabbit-walkingright1', 'assets/rabbit/white/walkingright1.png');
+        this.load.image('rabbit-walkingright2', 'assets/rabbit/white/walkingright2.png');
+        this.load.image('rabbit-jumpingright', 'assets/rabbit/white/jumpingright.png');
+        this.load.image('rabbit-lookingleft', 'assets/rabbit//white/lookingleft.png');
+        this.load.image('rabbit-walkingleft1', 'assets/rabbit/white/walkingleft1.png');
+        this.load.image('rabbit-walkingleft2', 'assets/rabbit/white/walkingleft2.png');
+        this.load.image('rabbit-jumpingleft', 'assets/rabbit/white/jumpingleft.png');
         this.load.image('button', 'assets/button.png');
         this.load.image('returnMenuButton', 'assets/Return-Menu-Button.png');
         this.load.audio('gameSoundtrack', 'assets/game_soundtrack.mp3');
@@ -374,20 +807,55 @@ class GameScene extends Phaser.Scene {
     }
 
     create() {
-        this.add.image(400, 300, 'sky');
+        this.sound.stopAll();
+        
+        // Set background based on the selected map
+        if (this.currentMap === 'sky') {
+            this.add.image(400, 300, 'sky');
+        } else if (this.currentMap === 'city') {
+            this.add.image(400, 300, 'city');
+        }
+        
         this.createPlatforms();
         this.createPlayer();
         this.createBot();
         this.createUI();
-        this.createCloud();
-        this.createColliders();
-        this.createBotMovement();
+        
+        // Only create cloud for sky map
+        if (this.currentMap === 'sky') {
+            this.createCloud();
+        }
+        
+        this.collisionManager = new CollisionManager(this);
+        this.collisionManager.setupColliders();
+        this.botAI = new BotAI(this, this.gameState.bot, this.gameState.player);
+        this.lastTime = 0;
         this.gameState.player.setSize(this.gameState.player.width * 0.8, this.gameState.player.height);
-    this.gameState.player.setOffset(this.gameState.player.width * 0.1, 0);
+        this.gameState.player.setOffset(this.gameState.player.width * 0.1, 0);
 
-    // Apply the same adjustment to the bot
-    this.gameState.bot.setSize(this.gameState.bot.width * 0.8, this.gameState.bot.height);
-    this.gameState.bot.setOffset(this.gameState.bot.width * 0.1, 0);
+
+        console.log("Raycaster plugin:", this.raycasterPlugin);
+
+        if (this.gameState.botMoveEvent) {
+            this.gameState.botMoveEvent.remove();
+        }
+        
+        if (this.raycasterPlugin) {
+            this.raycaster = this.raycasterPlugin.createRaycaster();
+            this.ray = this.raycaster.createRay();
+            console.log("Raycaster created:", this.raycaster);
+            console.log("Ray created:", this.ray);
+
+            // Add platforms to raycaster
+            this.gameState.platforms.children.entries.forEach(platform => {
+                this.raycaster.mapGameObjects(platform, false);
+            });
+        } else {
+            console.error("Raycaster plugin not found!");
+        }
+        // Apply the same adjustment to the bot
+        this.gameState.bot.setSize(this.gameState.bot.width * 0.8, this.gameState.bot.height);
+        this.gameState.bot.setOffset(this.gameState.bot.width * 0.1, 0);
         this.gameState.timerEvent = this.time.addEvent({ delay: CONSTANTS.GAME_DURATION, callback: this.onTimerEnd, callbackScope: this });
         this.gameState.gameSoundtrack = this.sound.add('gameSoundtrack', { loop: true });
         this.gameState.gameSoundtrack.play();
@@ -398,16 +866,43 @@ class GameScene extends Phaser.Scene {
             callbackScope: this,
             loop: true
         });
-    
-        //this.spawnShieldPowerup(); // Spawn first shield immediately
+
+        this.anims.create({
+            key: 'botLeft',
+            frames: [
+                { key: 'rabbit-lookingleft' },
+                { key: 'rabbit-lookingleft' },
+                { key: 'rabbit-walkingleft1' },
+                { key: 'rabbit-walkingleft2' },
+                { key: 'rabbit-walkingleft1' }
+            ],
+            frameRate: 10,
+            repeat: -1
+        });
+
+        this.anims.create({
+            key: 'botRight',
+            frames: [
+                { key: 'rabbit-lookingright' },
+                { key: 'rabbit-lookingright' },
+                { key: 'rabbit-walkingright1' },
+                { key: 'rabbit-walkingright2' },
+                { key: 'rabbit-walkingright1' }
+            ],
+            frameRate: 10,
+            repeat: -1
+        });
     }
 
-    update() {
+    update(time, delta) {
         if (!this.gameState.winText) { 
             this.handlePlayerMovement();
+            this.updateBotAnimation();
             this.updateHitboxes();
             this.checkBotPosition();
             this.updateTimer();
+            this.botShieldStrategy();
+            this.botDecision();
     
             // Keep player within screen boundaries
             this.gameState.player.x = Phaser.Math.Clamp(this.gameState.player.x, 
@@ -419,7 +914,12 @@ class GameScene extends Phaser.Scene {
                 this.gameState.bot.width / 2, 
                 this.sys.game.config.width - this.gameState.bot.width / 2);
         }
-    
+
+        if (!this.gameState.botDead && !this.gameState.winText) {
+            const actualDelta = this.lastTime === 0 ? delta : time - this.lastTime;
+            this.botAI.update(actualDelta);
+            this.lastTime = time;
+        }
         if (this.gameState.playerShielded && this.gameState.playerShieldSprite) {
             this.gameState.playerShieldSprite.setPosition(this.gameState.player.x, this.gameState.player.y);
         }
@@ -452,22 +952,24 @@ class GameScene extends Phaser.Scene {
 
     createPlatforms() {
         this.gameState.platforms = this.physics.add.staticGroup();
-    
+
+        const platformTexture = this.currentMap === 'sky' ? 'platform' : 'building';
+
         // Create bottom platform (full width)
-        this.createPlatform(0, 600, 800, 64);
-    
+        this.createPlatform(0, 600, 800, 64, platformTexture);
+
         // Create upper platforms
-        this.createPlatform(0, 250, 200, 32);     // Left platform
-        this.createPlatform(300, 400, 300, 32);   // Middle platform
-        this.createPlatform(650, 250, 150, 32);   // Right platform
+        this.createPlatform(0, 250, 200, 32, platformTexture);
+        this.createPlatform(300, 400, 300, 32, platformTexture);
+        this.createPlatform(650, 250, 150, 32, platformTexture);
     }
-    
-    createPlatform(x, y, width, height) {
-        const platform = this.gameState.platforms.create(x, y, 'platform');
-        platform.setOrigin(0, 1); // Set origin to bottom-left corner
+
+    createPlatform(x, y, width, height, texture) {
+        const platform = this.gameState.platforms.create(x, y, texture);
+        platform.setOrigin(0, 1);
         platform.displayWidth = width;
         platform.displayHeight = height;
-        platform.refreshBody(); // Update the physics body after resizing
+        platform.refreshBody();
     }
 
     createPlayer() {
@@ -488,7 +990,8 @@ class GameScene extends Phaser.Scene {
                 { key: 'rabbit-lookingleft' },
                 { key: 'rabbit-walkingleft1' },
                 { key: 'rabbit-jumpingleft' },
-                { key: 'rabbit-walkingleft2' }
+                { key: 'rabbit-walkingleft2' },
+                { key: 'rabbit-lookingleft' }
             ],
             frameRate: 17,
             repeat: -1
@@ -501,7 +1004,8 @@ class GameScene extends Phaser.Scene {
                 { key: 'rabbit-lookingright' },
                 { key: 'rabbit-walkingright1' },
                 { key: 'rabbit-jumpingright' },
-                { key: 'rabbit-walkingright2' }
+                { key: 'rabbit-walkingright2' },
+                { key: 'rabbit-lookingright' }
             ],
             frameRate: 17,
             repeat: -1
@@ -539,9 +1043,29 @@ class GameScene extends Phaser.Scene {
     }
 
     getRandomSpawnPoint() {
-        const x = Phaser.Math.Between(50, 750);
-        const y = Phaser.Math.Between(50, 550);
+        const gameWidth = this.sys.game.config.width;
+        const gameHeight = this.sys.game.config.height;
+        let x, y;
+        let validPosition = false;
+
+        while (!validPosition) {
+            x = Phaser.Math.Between(50, gameWidth - 50);
+            y = Phaser.Math.Between(50, gameHeight - 50);
+
+            // Check if the position is not inside any platform
+            validPosition = !this.isPositionInsidePlatform(x, y);
+        }
+
         return { x, y };
+    }
+
+    isPositionInsidePlatform(x, y) {
+        return this.gameState.platforms.children.entries.some(platform => {
+            return x >= platform.x && 
+                   x <= platform.x + platform.displayWidth &&
+                   y >= platform.y - platform.displayHeight &&
+                   y <= platform.y;
+        });
     }
 
 
@@ -564,81 +1088,130 @@ class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: cloud, x: '-=50', ease: 'Linear', duration: 10000, repeat: -1, yoyo: true });
     }
 
-    createColliders() {
-        this.physics.add.collider(this.gameState.player, this.gameState.platforms);
-        this.physics.add.collider(this.gameState.bot, this.gameState.platforms);
-        this.physics.add.overlap(this.gameState.playerFeet, this.gameState.botHead, this.handleCollision, null, this);
-        this.physics.add.overlap(this.gameState.botFeet, this.gameState.playerHead, this.handleCollision, null, this);
-    }
+    
 
     createBotMovement() {
-        this.gameState.botMoveEvent = this.time.addEvent({
-            delay: CONSTANTS.BOT_MOVE_DELAY,
-            callback: this.moveBot,
-            callbackScope: this,
-            loop: true
-        });
-    }
+        this.botDirection = 'right';
+        this.botMoveDuration = 0;
+        this.botMoveTimer = 0;
+        this.botIsMoving = false;
+        
+        
+        switch (this.cpuDifficulty) {
+            case 'easy':
+                this.botReactionTime = 1000;
+                this.botJumpProbability = 0.4;
+                this.botPowerupPriority = 0.6;
+                break;
+            case 'normal':
+                this.botReactionTime = 750;
+                this.botJumpProbability = 0.6;
+                this.botPowerupPriority = 0.7;
+                break;
+            case 'hard':
+                this.botReactionTime = 500;
+                this.botJumpProbability = 0.8;
+                this.botPowerupPriority = 0.8;
+                break;
+            default:
+                // ... default values ...
+        }
+    
+            this.botDecisionEvent = this.time.addEvent({
+                delay: this.botReactionTime,
+                callback: this.botDecision,
+                callbackScope: this,
+                loop: true
+            });
+        }
 
-    handlePlayerMovement() {
-        const onGround = this.gameState.player.body.touching.down;
-        const isJumping = !onGround;
-        const atRightEdge = this.gameState.player.x >= this.sys.game.config.width - this.gameState.player.width / 2;
-        const atLeftEdge = this.gameState.player.x <= this.gameState.player.width / 2;
-    
-        // Add a cooldown for animation changes
-        if (!this.lastAnimationChangeTime) {
-            this.lastAnimationChangeTime = 0;
+        botDecision() {
+            if (this.gameState.botDead || this.gameState.winText) return;
+        
+            const bot = this.gameState.bot;
+            const player = this.gameState.player;
+            const powerup = this.gameState.shieldPowerup;
+        
+            // Determine if the bot and player are on different platforms
+            const botPlatform = this.getCurrentPlatform(bot);
+            const playerPlatform = this.getCurrentPlatform(player);
+            const onDifferentPlatforms = botPlatform !== playerPlatform;
+        
+            // Determine priorities
+            const canJumpOnPlayer = this.canJumpOnTarget(bot, player);
+            const isPowerupAvailable = powerup && powerup.active;
+            const canReachPowerup = isPowerupAvailable && this.canReachTarget(bot, powerup);
+        
+            // Decision making
+            if (onDifferentPlatforms) {
+                this.moveTowardsPlatform(playerPlatform);
+            } else if (canJumpOnPlayer) {
+                this.moveToJumpOnPlayer();
+            } else if (canReachPowerup) {
+                this.moveToPowerup();
+            } else {
+                this.moveTowardsPlayer();
+            }
+        
+            // Jump if needed, but not constantly
+            if (bot.body.touching.down && this.shouldJump()) {
+                bot.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
+            }
+        
+            this.avoidFallingOffPlatform();
         }
-        const currentTime = this.time.now;
-        const canChangeAnimation = currentTime - this.lastAnimationChangeTime > 100; // 100ms cooldown
-    
-        if (this.gameState.cursors.left.isDown && !atLeftEdge) {
-            this.gameState.player.setVelocityX(-300);
-            if (onGround && canChangeAnimation) {
+
+        getCurrentPlatform(entity) {
+            for (let platform of this.gameState.platforms.children.entries) {
+                if (entity.y + entity.height <= platform.y && 
+                    entity.x >= platform.x && 
+                    entity.x <= platform.x + platform.width) {
+                    return platform;
+                }
+            }
+            return null; // Entity is not on any platform
+        }
+
+        handlePlayerMovement() {
+            const onGround = this.gameState.player.body.touching.down;
+            const isJumping = !onGround && this.gameState.player.body.velocity.y < 0;
+            const isFalling = !onGround && this.gameState.player.body.velocity.y > 0;
+            const atRightEdge = this.gameState.player.x >= this.sys.game.config.width - this.gameState.player.width / 2;
+            const atLeftEdge = this.gameState.player.x <= this.gameState.player.width / 2;
+        
+            // Get the saved control scheme
+            const controlScheme = localStorage.getItem('controlScheme') || 'Arrows';
+        
+            // Define key mappings based on the control scheme
+            let leftKey, rightKey, upKey;
+            switch (controlScheme) {
+                case 'WASD':
+                    leftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+                    rightKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+                    upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+                    break;
+                default: // 'Arrows'
+                    leftKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
+                    rightKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
+                    upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
+            }
+        
+            // Use the defined keys for movement
+            if (leftKey.isDown && !atLeftEdge) {
+                this.gameState.player.setVelocityX(-300);
                 this.gameState.player.anims.play('left', true);
-                this.lastAnimationChangeTime = currentTime;
-            } else if (isJumping) {
-                this.gameState.player.setTexture('rabbit-jumpingleft');
-            }
-            this.gameState.player.setFlipX(false);
-        } else if (this.gameState.cursors.right.isDown && !atRightEdge) {
-            this.gameState.player.setVelocityX(300);
-            if (onGround && canChangeAnimation) {
+            } else if (rightKey.isDown && !atRightEdge) {
+                this.gameState.player.setVelocityX(300);
                 this.gameState.player.anims.play('right', true);
-                this.lastAnimationChangeTime = currentTime;
-            } else if (isJumping) {
-                this.gameState.player.setTexture('rabbit-jumpingright');
-            }
-            this.gameState.player.setFlipX(false);
-        } else {
-            this.gameState.player.setVelocityX(0);
-            if (onGround && canChangeAnimation) {
+            } else {
+                this.gameState.player.setVelocityX(0);
                 this.gameState.player.anims.play('idle', true);
-                this.lastAnimationChangeTime = currentTime;
-            } else if (isJumping) {
-                this.gameState.player.setTexture('rabbit-jumpingstraight');
+            }
+        
+            if (upKey.isDown && onGround) {
+                this.gameState.player.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
             }
         }
-    
-        if (this.gameState.cursors.up.isDown && onGround) {
-            this.gameState.player.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
-        }
-    
-        // Prevent changing to jumping straight sprite when landing
-        if (this.gameState.player.body.velocity.y === 0 && onGround && canChangeAnimation) {
-            if (this.gameState.player.texture.key === 'rabbit-jumpingstraight') {
-                this.gameState.player.anims.play('idle', true);
-                this.lastAnimationChangeTime = currentTime;
-            }
-        }
-    
-        // Stop animations when at screen edges
-        if ((atRightEdge && this.gameState.cursors.right.isDown) || 
-            (atLeftEdge && this.gameState.cursors.left.isDown)) {
-            this.gameState.player.anims.stop();
-        }
-    }
 
     updateHitboxes() {
         this.updateHitbox(this.gameState.playerHead, this.gameState.player, -this.gameState.player.height / 2);
@@ -658,58 +1231,8 @@ class GameScene extends Phaser.Scene {
         this.gameState.timerText.setText(`Time: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
     }
 
-    handleCollision(entity1, entity2) {
-        const currentTime = this.time.now;
-        if (currentTime < this.gameState.invulnerableUntil) {
-            console.log('Collision ignored due to invulnerability');
-            return; // Still invulnerable, ignore collision
-        }
     
-        let killer, victim;
-        if (entity1 === this.gameState.playerFeet || entity2 === this.gameState.botHead) {
-            killer = this.gameState.player;
-            victim = this.gameState.bot;
-        } else {
-            killer = this.gameState.bot;
-            victim = this.gameState.player;
-        }
-    
-        console.log(`Collision detected. Killer: ${killer === this.gameState.player ? 'Player' : 'Bot'}, Victim: ${victim === this.gameState.player ? 'Player' : 'Bot'}`);
-        console.log(`Player shielded: ${this.gameState.playerShielded}, Bot shielded: ${this.gameState.botShielded}`);
-    
-        // Check if either entity is dead
-        if ((killer === this.gameState.player && this.gameState.playerDead) ||
-            (killer === this.gameState.bot && this.gameState.botDead) ||
-            (victim === this.gameState.player && this.gameState.playerDead) ||
-            (victim === this.gameState.bot && this.gameState.botDead)) {
-            console.log('Collision ignored due to dead entity');
-            return; // Ignore collision if either entity is dead
-        }
-    
-        if (killer.y < victim.y) {
-            if (victim === this.gameState.player && this.gameState.playerShielded) {
-                console.log('Player shield activated');
-                // Player is shielded, remove shield and bounce
-                this.removeShield(this.gameState.player);
-                killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
-                // Add a brief invulnerability period after shield is removed
-                this.gameState.invulnerableUntil = currentTime + 150; // 150ms invulnerability
-                return; // Exit the method to prevent further processing
-            } else if (victim === this.gameState.bot && this.gameState.botShielded) {
-                console.log('Bot shield activated');
-                // Bot is shielded, remove shield and bounce
-                this.removeShield(this.gameState.bot);
-                killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
-                // Add a brief invulnerability period after shield is removed
-                this.gameState.invulnerableUntil = currentTime + 150; // 150ms invulnerability
-                return; // Exit the method to prevent further processing
-            }
-            
-            // If we reach here, the victim is not shielded
-            console.log('No shield, handling kill');
-            this.handleKill(killer, victim);
-        }
-    }
+
     
     removeShield(character) {
         console.log(`Removing shield from ${character === this.gameState.player ? 'Player' : 'Bot'}`);
@@ -785,16 +1308,12 @@ class GameScene extends Phaser.Scene {
         entity.setVisible(true);
         entity.body.enable = true;
         entity.setVelocity(0, 0);
-    
+
         if (type === 'bot') {
             this.gameState.botDead = false;
-            // Remove the existing bot move event
             if (this.gameState.botMoveEvent) {
                 this.gameState.botMoveEvent.remove();
             }
-            // Immediately move the bot
-            this.moveBot();
-            // Set up the recurring bot movement
             this.gameState.botMoveEvent = this.time.addEvent({
                 delay: CONSTANTS.BOT_MOVE_DELAY,
                 callback: this.moveBot,
@@ -804,57 +1323,204 @@ class GameScene extends Phaser.Scene {
         } else if (type === 'player') {
             this.gameState.playerDead = false;
         }
-    
-        const MAX_ATTEMPTS = 20;
-        let validPosition = false;
-        let newPosX, newPosY;
-    
-        for (let attempts = 0; attempts < MAX_ATTEMPTS; attempts++) {
-            newPosX = Phaser.Math.Between(50, 750);
-            newPosY = Phaser.Math.Between(50, 550);
-    
-            let overlapping = false;
-            this.gameState.platforms.children.entries.forEach((platform) => {
-                if (Phaser.Geom.Intersects.RectangleToRectangle(
-                    new Phaser.Geom.Rectangle(newPosX - 16, newPosY - 24, 32, 48),
-                    platform.getBounds()
-                )) {
-                    overlapping = true;
-                }
-            });
-    
-            if (!overlapping) {
-                validPosition = true;
-                break;
-            }
-        }
-    
-        if (!validPosition) {
-            newPosX = 400;
-            newPosY = 100;
-        }
-    
-        entity.setPosition(newPosX, newPosY);
     }
 
     moveBot() {
-        if (!this.gameState.botDead && !this.gameState.winText) {
-            const directions = [-300, 300];
-            const newVelocityX = directions[Math.floor(Math.random() * directions.length)];
-            this.gameState.bot.setVelocityX(newVelocityX);
+        if (this.gameState.botDead || this.gameState.winText) return;
     
-            if (Math.random() > 0.5 && this.gameState.bot.body.touching.down) {
-                this.gameState.bot.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
-            }
+        const bot = this.gameState.bot;
+        const player = this.gameState.player;
+        const powerup = this.gameState.shieldPowerup;
     
-            if (newVelocityX < 0) {
-                this.gameState.bot.anims.play('left', true);
-            } else if (newVelocityX > 0) {
-                this.gameState.bot.anims.play('right', true);
-            } else {
-                this.gameState.bot.anims.play('idle', true);
+        // Determine priorities
+        const canJumpOnPlayer = this.canJumpOnTarget(bot, player);
+        const isPowerupAvailable = powerup && powerup.active;
+        const canReachPowerup = isPowerupAvailable && this.canReachTarget(bot, powerup);
+    
+        let targetX;
+        if (canJumpOnPlayer && Math.random() < this.botJumpProbability) {
+            targetX = player.x;
+        } else if (canReachPowerup && Math.random() < this.botPowerupPriority) {
+            targetX = powerup.x;
+        } else {
+            targetX = player.x;
+        }
+    
+        // Smooth movement towards target
+        const direction = targetX < bot.x ? -1 : 1;
+        const targetVelocity = direction * 300;
+        bot.setVelocityX(bot.body.velocity.x + (targetVelocity - bot.body.velocity.x) * 0.1);
+    
+        this.botDirection = direction === -1 ? 'left' : 'right';
+    
+        // Jump if needed
+        if (bot.body.touching.down && this.shouldJump()) {
+            bot.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
+        }
+    
+        this.avoidFallingOffPlatform();
+        this.updateBotAnimation();
+    }
+
+    moveTowardsPlayer() {
+        const bot = this.gameState.bot;
+        const player = this.gameState.player;
+        const direction = player.x < bot.x ? -1 : 1;
+        bot.setVelocityX(direction * 300);
+        this.botDirection = direction === -1 ? 'left' : 'right';
+    }
+
+    moveToPowerup() {
+        const bot = this.gameState.bot;
+        const powerup = this.gameState.shieldPowerup;
+        if (powerup && powerup.active) {
+            const direction = powerup.x < bot.x ? -1 : 1;
+            bot.setVelocityX(direction * 300);
+            this.botDirection = direction === -1 ? 'left' : 'right';
+    
+            // If the powerup is above the bot, make it jump
+            if (powerup.y < bot.y - 50 && bot.body.touching.down) {
+                bot.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
             }
         }
+    }
+
+    moveTowardsPlatform(targetPlatform) {
+        if (!targetPlatform) return;
+    
+        const bot = this.gameState.bot;
+        const direction = targetPlatform.x + targetPlatform.width / 2 < bot.x ? -1 : 1;
+        bot.setVelocityX(direction * 300);
+        this.botDirection = direction === -1 ? 'left' : 'right';
+    }
+
+    canJumpOnTarget(jumper, target) {
+        const heightDifference = jumper.y - target.y;
+        const horizontalDistance = Math.abs(jumper.x - target.x);
+        return heightDifference > 50 && heightDifference < 200 && horizontalDistance < 100;
+    }
+
+    canReachTarget(entity, target) {
+        const distance = Phaser.Math.Distance.Between(entity.x, entity.y, target.x, target.y);
+        return distance < 200; // Adjust this value based on your game's scale
+    }
+
+    moveToJumpOnPlayer() {
+        const bot = this.gameState.bot;
+        const player = this.gameState.player;
+        const direction = player.x < bot.x ? -1 : 1;
+        bot.setVelocityX(direction * 300);
+        this.botDirection = direction === -1 ? 'left' : 'right';
+    }
+
+    moveRandomly() {
+        const directions = [-1, 1];
+        const newDirection = directions[Math.floor(Math.random() * directions.length)];
+        this.botDirection = newDirection === -1 ? 'left' : 'right';
+        this.gameState.bot.setVelocityX(newDirection * 300);
+    }
+
+    isPlatformAbove(entity) {
+        // Use raycasting if available, otherwise use the previous implementation
+        if (this.ray) {
+            this.ray.setOrigin(entity.x, entity.y - entity.height / 2);
+            this.ray.setAngle(-90);
+            const intersection = this.ray.cast();
+            return intersection && intersection.distance < 100;
+        } else {
+            const platforms = this.gameState.platforms.children.entries;
+            for (let platform of platforms) {
+                if (platform.y < entity.y && 
+                    Math.abs(platform.x - entity.x) < platform.width / 2 &&
+                    entity.y - platform.y < 100) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    avoidFallingOffPlatform() {
+        const bot = this.gameState.bot;
+        if (bot.body.touching.down) {
+            const aheadX = bot.x + (bot.body.velocity.x > 0 ? 20 : -20);
+            const groundBelow = this.physics.overlapRect(aheadX, bot.y, 5, 50, false, true, this.gameState.platforms);
+            
+            if (!groundBelow) {
+                bot.setVelocityX(-bot.body.velocity.x);
+                this.botDirection = this.botDirection === 'left' ? 'right' : 'left';
+            }
+        }
+    }
+
+    shouldJump() {
+        const bot = this.gameState.bot;
+        const player = this.gameState.player;
+        const powerup = this.gameState.shieldPowerup;
+    
+        // Jump if player is directly above and close
+        if (player.y < bot.y - 50 && Math.abs(player.x - bot.x) < 50) {
+            return true;
+        }
+    
+        // Jump if powerup is above and close
+        if (powerup && powerup.active && powerup.y < bot.y - 50 && Math.abs(powerup.x - bot.x) < 50) {
+            return true;
+        }
+    
+        // Jump if there's a platform slightly above and ahead in the direction of movement
+        const aheadX = bot.x + (this.botDirection === 'right' ? 50 : -50);
+        const platformAbove = this.physics.overlapRect(aheadX, bot.y - 100, 10, 100, false, true, this.gameState.platforms);
+        if (platformAbove) {
+            return true;
+        }
+    
+        // Random jumps, but less frequent
+        return Math.random() < this.botJumpProbability * 0.3;
+    }
+
+    botShieldStrategy() {
+        if (!this.gameState.botShielded) return;
+    
+        const bot = this.gameState.bot;
+        const player = this.gameState.player;
+    
+        // If the player is above and close, keep the shield
+        if (player.y < bot.y && Phaser.Math.Distance.Between(bot.x, bot.y, player.x, player.y) < 100) {
+            return;
+        }
+    
+        // Otherwise, consider removing the shield to collect another powerup
+        if (this.gameState.shieldPowerup && this.gameState.shieldPowerup.active) {
+            const distanceToPowerup = Phaser.Math.Distance.Between(
+                bot.x, bot.y, 
+                this.gameState.shieldPowerup.x, this.gameState.shieldPowerup.y
+            );
+            if (distanceToPowerup < 150) {
+                this.removeShield(bot);
+            }
+        }
+    }
+
+    updateBotAnimation() {
+        const bot = this.gameState.bot;
+        const onGround = bot.body.touching.down;
+        const isJumping = !onGround && bot.body.velocity.y < 0;
+        const isFalling = !onGround && bot.body.velocity.y > 0;
+        
+        if (onGround) {
+            if (Math.abs(bot.body.velocity.x) > 10) {
+                bot.anims.play(this.botDirection === 'left' ? 'botLeft' : 'botRight', true);
+            } else {
+                bot.anims.play('botIdle', true);
+            }
+        } else if (isJumping) {
+            bot.setTexture(`rabbit-jumping${this.botDirection}`);
+        } else if (isFalling) {
+            bot.setTexture(`rabbit-walking${this.botDirection}2`);
+        }
+    
+        bot.setFlipX(false);
     }
 
 
@@ -944,7 +1610,7 @@ class GameScene extends Phaser.Scene {
         // Create a yoyo tween
         this.tweens.add({
             targets: this.gameState.shieldPowerup,
-            y: y + 50, // Move 50 pixels down
+            y: y + 30, // Move 50 pixels down
             duration: 1000,
             ease: 'Sine.easeInOut',
             yoyo: true,
@@ -1086,9 +1752,9 @@ class GameScene extends Phaser.Scene {
         if (this.gameState.timerEvent) this.gameState.timerEvent.remove();
         if (this.gameState.botMoveEvent) this.gameState.botMoveEvent.remove();
         
-
         // Stop all game sounds
         this.sound.stopAll();
+
         // Reset game state
         this.gameState.playerScore = 0;
         this.gameState.botScore = 0;
@@ -1104,6 +1770,7 @@ class GameScene extends Phaser.Scene {
         // Switch to the MainMenu scene
         this.scene.start('MainMenu');
     }
+
 
     
 }
@@ -1131,9 +1798,18 @@ window.onload = function() {
             pixelArt: false,
             antialias: true
         },
-        backgroundColor: '#000000'
+        backgroundColor: '#000000',
+        plugins: {
+            scene: [
+                {
+                    key: 'PhaserRaycaster',
+                    plugin: PhaserRaycaster,
+                    mapping: 'raycasterPlugin'
+                }
+            ]
+        }
     };
-
+    
     const game = new Phaser.Game(config);
 
     // Initialize sound after user interaction
