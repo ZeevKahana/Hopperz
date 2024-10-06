@@ -487,6 +487,7 @@ class MainMenuScene extends Phaser.Scene {
       // Load map preview images
       this.load.image('sky_preview', 'assets/sky_preview.png');
       this.load.image('city_preview', 'assets/city_preview.png');
+      this.load.image('space_preview', 'assets/space_preview.png');
     }
   
     create() {
@@ -528,56 +529,56 @@ class MainMenuScene extends Phaser.Scene {
     }
   
     showMapSelection() {
-      this.mapSelectionActive = true;
-      const maps = ['sky', 'city'];
-      this.mapButtons = [];
-      
-      const overlay = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.7);
-      this.mapButtons.push(overlay);
-  
-      const title = this.add.text(400, 100, 'Select a Map', {
-        fontSize: '32px',
-        fill: '#fff'
-      }).setOrigin(0.5);
-      this.mapButtons.push(title);
-  
-      maps.forEach((map, index) => {
-        const x = 300 + index * 200; // Position maps side by side
-        const y = 300; // Centered vertically
-  
-        const preview = this.add.image(x, y, `${map}_preview`)
-          .setScale(0.4) // Adjust scale as needed
-          .setInteractive();
-        const text = this.add.text(x, y + 100, map, {
-          fontSize: '24px',
-          fill: '#fff'
+        this.mapSelectionActive = true;
+        const maps = ['sky', 'city', 'space'];
+        this.mapButtons = [];
+        
+        const overlay = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.7);
+        this.mapButtons.push(overlay);
+    
+        const title = this.add.text(400, 100, 'Select a Map', {
+            fontSize: '32px',
+            fill: '#fff'
         }).setOrigin(0.5);
-  
-        preview.on('pointerdown', () => this.selectMap(map));
-        preview.on('pointerover', () => {
-          preview.setScale(0.45); // Slightly enlarge on hover
-          text.setStyle({ fill: '#ff0' });
+        this.mapButtons.push(title);
+    
+        maps.forEach((map, index) => {
+            const x = 200 + index * 200; // Adjust positioning for three maps
+            const y = 300;
+    
+            const preview = this.add.image(x, y, `${map}_preview`)
+                .setScale(0.4)
+                .setInteractive();
+            const text = this.add.text(x, y + 100, map, {
+                fontSize: '24px',
+                fill: '#fff'
+            }).setOrigin(0.5);
+    
+            preview.on('pointerdown', () => this.selectMap(map));
+            preview.on('pointerover', () => {
+                preview.setScale(0.45);
+                text.setStyle({ fill: '#ff0' });
+            });
+            preview.on('pointerout', () => {
+                preview.setScale(0.4);
+                text.setStyle({ fill: '#fff' });
+            });
+    
+            this.mapButtons.push(preview, text);
         });
-        preview.on('pointerout', () => {
-          preview.setScale(0.4); // Return to original size
-          text.setStyle({ fill: '#fff' });
-        });
-  
-        this.mapButtons.push(preview, text);
-      });
-  
-      const backButton = this.add.text(400, 500, 'Back', {
-        fontSize: '24px',
-        fill: '#fff',
-        backgroundColor: '#000',
-        padding: { x: 15, y: 8 }
-      }).setOrigin(0.5).setInteractive();
-  
-      backButton.on('pointerdown', () => this.hideMapSelection());
-      backButton.on('pointerover', () => backButton.setStyle({ fill: '#ff0' }));
-      backButton.on('pointerout', () => backButton.setStyle({ fill: '#fff' }));
-  
-      this.mapButtons.push(backButton);
+    
+        const backButton = this.add.text(400, 500, 'Back', {
+            fontSize: '24px',
+            fill: '#fff',
+            backgroundColor: '#000',
+            padding: { x: 15, y: 8 }
+        }).setOrigin(0.5).setInteractive();
+    
+        backButton.on('pointerdown', () => this.hideMapSelection());
+        backButton.on('pointerover', () => backButton.setStyle({ fill: '#ff0' }));
+        backButton.on('pointerout', () => backButton.setStyle({ fill: '#fff' }));
+    
+        this.mapButtons.push(backButton);
     }
   
     hideMapSelection() {
@@ -786,7 +787,11 @@ class GameScene extends Phaser.Scene {
         this.load.image('platform', 'assets/platform.png');
         this.load.image('cloud', 'assets/cloud.png');
         this.load.image('city', 'assets/city.png');
-        this.load.image('building', 'assets/building3.png');
+        this.load.image('space', 'assets/space.png');
+        this.load.image('building1', 'assets/building1.png');
+        this.load.image('building2', 'assets/building2.png');
+        this.load.image('building3', 'assets/building3.png');
+        this.load.image('space-platform', 'assets/space-platform.png');
         this.load.image('sky_preview', 'assets/sky_preview.png');
         this.load.image('city_preview', 'assets/city_preview.png');
         this.load.image('rabbit-standing', 'assets/rabbit/white/standing.png');
@@ -809,11 +814,12 @@ class GameScene extends Phaser.Scene {
     create() {
         this.sound.stopAll();
         
-        // Set background based on the selected map
         if (this.currentMap === 'sky') {
             this.add.image(400, 300, 'sky');
         } else if (this.currentMap === 'city') {
             this.add.image(400, 300, 'city');
+        } else if (this.currentMap === 'space') {
+            this.add.image(400, 300, 'space');
         }
         
         this.createPlatforms();
@@ -821,9 +827,12 @@ class GameScene extends Phaser.Scene {
         this.createBot();
         this.createUI();
         
-        // Only create cloud for sky map
         if (this.currentMap === 'sky') {
             this.createCloud();
+        }
+
+        if (this.currentMap === 'space') {
+            this.physics.world.setBounds(0, 0, this.sys.game.config.width, Infinity);
         }
         
         this.collisionManager = new CollisionManager(this);
@@ -915,6 +924,14 @@ class GameScene extends Phaser.Scene {
                 this.sys.game.config.width - this.gameState.bot.width / 2);
         }
 
+        if (this.currentMap === 'space') {
+            this.wrapEntities();
+        }
+
+        if (!this.gameState.botDead) {
+            this.botDecision(delta);
+        }
+
         if (!this.gameState.botDead && !this.gameState.winText) {
             const actualDelta = this.lastTime === 0 ? delta : time - this.lastTime;
             this.botAI.update(actualDelta);
@@ -950,18 +967,69 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    wrapEntities() {
+        const wrapObject = (obj) => {
+            if (obj.y > this.sys.game.config.height) {
+                obj.y = 0;
+            } else if (obj.y < 0) {
+                obj.y = this.sys.game.config.height;
+            }
+        };
+
+        wrapObject(this.gameState.player);
+       
+        this.updateHitbox(this.gameState.playerHead, this.gameState.player, -this.gameState.player.height / 2);
+        this.updateHitbox(this.gameState.playerFeet, this.gameState.player, this.gameState.player.height / 2);
+        this.updateHitbox(this.gameState.botHead, this.gameState.bot, -this.gameState.bot.height / 2);
+        this.updateHitbox(this.gameState.botFeet, this.gameState.bot, this.gameState.bot.height / 2);
+    }
+
     createPlatforms() {
         this.gameState.platforms = this.physics.add.staticGroup();
 
-        const platformTexture = this.currentMap === 'sky' ? 'platform' : 'building';
+        if (this.currentMap === 'sky') {
+            this.createSkyPlatforms();
+        } else if (this.currentMap === 'city') {
+            this.createCityPlatforms();
+        } else if (this.currentMap === 'space') {
+            this.createSpacePlatforms();
+        }
+    }
 
+    createSkyPlatforms() {
         // Create bottom platform (full width)
-        this.createPlatform(0, 600, 800, 64, platformTexture);
+        this.createPlatform(0, 600, 800, 64, 'platform');
 
         // Create upper platforms
-        this.createPlatform(0, 250, 200, 32, platformTexture);
-        this.createPlatform(300, 400, 300, 32, platformTexture);
-        this.createPlatform(650, 250, 150, 32, platformTexture);
+        this.createPlatform(0, 250, 200, 32, 'platform');
+        this.createPlatform(300, 400, 300, 32, 'platform');
+        this.createPlatform(650, 250, 150, 32, 'platform');
+    }
+
+    createCityPlatforms() {
+        // Create a wide bottom platform using building3
+        this.createPlatform(0, 600, 800, 64, 'building3');
+
+        // Place building1 and building2 on top of the bottom platform
+        this.createBuildingPlatform(50, 536, 'building1');
+        this.createBuildingPlatform(250, 536, 'building2');
+        this.createBuildingPlatform(450, 536, 'building1');
+        this.createBuildingPlatform(650, 536, 'building2');
+
+        // Create scattered higher platforms using building3
+        
+        
+        this.createPlatform(700, 200, 100, 32, 'building3');
+        this.createPlatform(300, 170, 150, 32, 'building3');
+    }
+
+    createSpacePlatforms() {
+        // Create floating platforms
+        this.createPlatform(100, 450, 200, 32, 'space-platform');
+        this.createPlatform(500, 350, 200, 32, 'space-platform');
+        this.createPlatform(300, 250, 200, 32, 'space-platform');
+        this.createPlatform(50, 150, 150, 32, 'space-platform');
+        this.createPlatform(650, 150, 150, 32, 'space-platform');
     }
 
     createPlatform(x, y, width, height, texture) {
@@ -970,6 +1038,26 @@ class GameScene extends Phaser.Scene {
         platform.displayWidth = width;
         platform.displayHeight = height;
         platform.refreshBody();
+    }
+
+    createBuildingPlatform(x, y, texture) {
+        const building = this.add.image(x, y, texture);
+        building.setOrigin(0, 1);
+        
+        // Adjust these values based on your building sprite dimensions
+        const buildingWidth = building.width;
+        const buildingHeight = building.height;
+        
+        // Create a thin platform just at the top of the building
+        const topPlatform = this.gameState.platforms.create(x, y - buildingHeight, 'platform');
+        topPlatform.setOrigin(0, 0); // Set origin to top-left corner
+        topPlatform.displayWidth = buildingWidth;
+        topPlatform.displayHeight = 15; // Make it as thin as possible
+        topPlatform.visible = false; // Make it invisible
+        topPlatform.refreshBody();
+
+        // Offset the platform slightly to align with the visual top of the building
+        topPlatform.y += 5; // Adjust this value as needed
     }
 
     createPlayer() {
@@ -1052,8 +1140,12 @@ class GameScene extends Phaser.Scene {
             x = Phaser.Math.Between(50, gameWidth - 50);
             y = Phaser.Math.Between(50, gameHeight - 50);
 
-            // Check if the position is not inside any platform
-            validPosition = !this.isPositionInsidePlatform(x, y);
+            // For 'space' map, we don't need to check for platform collision
+            if (this.currentMap === 'space') {
+                validPosition = true;
+            } else {
+                validPosition = !this.isPositionInsidePlatform(x, y);
+            }
         }
 
         return { x, y };
@@ -1525,9 +1617,19 @@ class GameScene extends Phaser.Scene {
 
 
     checkBotPosition() {
-        if (this.gameState.bot.y > 568) {
-            this.gameState.bot.setPosition(400, 100);
-            this.gameState.bot.setVelocity(0, 0);
+        if (this.currentMap === 'space') {
+            // Implement wrapping for the space map
+            if (this.gameState.bot.y > this.sys.game.config.height) {
+                this.gameState.bot.y = 0;
+            } else if (this.gameState.bot.y < 0) {
+                this.gameState.bot.y = this.sys.game.config.height;
+            }
+        } else {
+            // Original behavior for other maps
+            if (this.gameState.bot.y > 568) {
+                this.gameState.bot.setPosition(400, 100);
+                this.gameState.bot.setVelocity(0, 0);
+            }
         }
     }
 
