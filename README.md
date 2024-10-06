@@ -27,3 +27,7 @@ new Rabbit sprite for player and bot
 10/05/24 - ver 0.17
 -added a new map: 'city'
 -added map icon to the main menu
+
+10/06/24 - ver 0.18
+-improved 'city' map
+-added new 'space' map
