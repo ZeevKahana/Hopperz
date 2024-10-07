@@ -912,6 +912,13 @@ class GameScene extends Phaser.Scene {
             this.physics.world.setBounds(0, 0, this.sys.game.config.width, Infinity);
         }
         
+        this.physics.add.collider(this.gameState.player, this.gameState.platforms);
+        this.physics.add.collider(this.gameState.bot, this.gameState.platforms);
+
+        if (this.currentMap === 'space') {
+            this.physics.add.collider(this.gameState.player, this.gameState.movingPlatforms);
+            this.physics.add.collider(this.gameState.bot, this.gameState.movingPlatforms);
+        }
         this.collisionManager = new CollisionManager(this);
         this.collisionManager.setupColliders();
         this.botAI = new BotAI(this, this.gameState.bot, this.gameState.player);
@@ -1101,14 +1108,58 @@ class GameScene extends Phaser.Scene {
     }
 
     createSpacePlatforms() {
-        // Create floating platforms
-        this.createPlatform(100, 450, 200, 32, 'space-platform');
-        this.createPlatform(500, 350, 200, 32, 'space-platform');
-        this.createPlatform(300, 250, 200, 32, 'space-platform');
-        this.createPlatform(50, 150, 150, 32, 'space-platform');
-        this.createPlatform(650, 150, 150, 32, 'space-platform');
+        const gameWidth = this.sys.game.config.width;
+        const gameHeight = this.sys.game.config.height;
+        const platformWidth = 200;
+        const platformHeight = 32;
+    
+        // Calculate the leftmost and rightmost positions for the platforms
+        const leftmostPosition = 0;
+        const rightmostPosition = gameWidth - platformWidth;
+    
+        // Create top platform (moving left to right)
+        const topPlatform = this.gameState.platforms.create(leftmostPosition, gameHeight * 0.3, 'space-platform');
+        topPlatform.setDisplaySize(platformWidth, platformHeight);
+        topPlatform.refreshBody();
+        
+        this.tweens.add({
+            targets: topPlatform,
+            x: rightmostPosition,
+            duration: 5000,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1
+        });
+    
+        // Create bottom platform (moving right to left)
+        const bottomPlatform = this.gameState.platforms.create(rightmostPosition, gameHeight * 0.7, 'space-platform');
+        bottomPlatform.setDisplaySize(platformWidth, platformHeight);
+        bottomPlatform.refreshBody();
+        
+        this.tweens.add({
+            targets: bottomPlatform,
+            x: leftmostPosition,
+            duration: 5000,
+            ease: 'Sine.easeInOut',
+            yoyo: true,
+            repeat: -1
+        });
+    
+        // Store references to the platforms
+        this.gameState.movingPlatforms = [topPlatform, bottomPlatform];
+    
+        // Set up custom update for moving platforms
+        this.events.on('update', this.updateMovingPlatforms, this);
     }
-
+    
+    updateMovingPlatforms() {
+        if (this.gameState.movingPlatforms) {
+            this.gameState.movingPlatforms.forEach(platform => {
+                platform.refreshBody();
+            });
+        }
+    }
+    
     createPlatform(x, y, width, height, texture) {
         const platform = this.gameState.platforms.create(x, y, texture);
         platform.setOrigin(0, 1);
