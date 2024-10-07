@@ -466,16 +466,20 @@ class LoginScene extends Phaser.Scene {
 
 class MainMenuScene extends Phaser.Scene {
     constructor() {
-      super('MainMenu');
-      this.isOptionsOpen = false;
-      this.difficultyButtons = [];
-      this.menuSoundtrack = null;
-      this.controlSchemes = ['Arrows', 'WASD'];
-      this.currentControlScheme = 'Arrows';
-      this.startButton = null;
-      this.optionsButton = null;
-      this.selectedMap = 'sky'; // Default selected map
-      this.mapSelectionActive = false;
+        super('MainMenu');
+        this.isOptionsOpen = false;
+        this.difficultyButtons = [];
+        this.menuSoundtrack = null;
+        this.controlSchemes = ['Arrows', 'WASD'];
+        this.currentControlScheme = 'Arrows';
+        this.startButton = null;
+        this.optionsButton = null;
+        this.selectedMap = 'sky'; // Default selected map
+        this.mapSelectionActive = false;
+        this.selectedColor = 'white'; // Default color
+        this.colorButtons = [];
+        this.mainMenuElements = [];
+        this.selectionScreenElements = [];
     }
   
     preload() {
@@ -484,48 +488,63 @@ class MainMenuScene extends Phaser.Scene {
       this.load.audio('menuSoundtrack', 'assets/menu_soundtrack.mp3');
       this.load.image('optionsButton', 'assets/options-button.png');
       this.load.image('mapSelectButton', 'assets/map-select-button.png');
-      // Load map preview images
       this.load.image('sky_preview', 'assets/sky_preview.png');
       this.load.image('city_preview', 'assets/city_preview.png');
       this.load.image('space_preview', 'assets/space_preview.png');
+      this.load.image('white-standing', 'assets/rabbit/white/standing.png');
+      this.load.image('yellow-standing', 'assets/rabbit/yellow/standing.png');
+      this.load.image('grey-standing', 'assets/rabbit/grey/standing.png');
     }
   
     create() {
-      this.add.image(400, 300, 'menuBackground').setScale(1.28);
+        this.add.image(400, 300, 'menuBackground').setScale(1.28);
   
-      this.startButton = this.add.image(402, 385, 'startButton')
-        .setInteractive()
-        .setScale(0.85);
+        this.startButton = this.add.image(402, 385, 'startButton')
+            .setInteractive()
+            .setScale(0.85);
   
-      this.startButton.on('pointerdown', () => this.showDifficultySelection());
+        this.startButton.on('pointerdown', () => this.showSelectionScreen());
   
-      this.optionsButton = this.add.image(600, 385, 'optionsButton')
-        .setInteractive()
-        .setScale(0.10);
+        this.optionsButton = this.add.image(600, 385, 'optionsButton')
+            .setInteractive()
+            .setScale(0.10);
   
-      this.optionsButton.on('pointerdown', () => {
-        if (!this.isOptionsOpen) {
-          this.showOptionsPage();
-        }
-      });
+        this.optionsButton.on('pointerdown', () => {
+            if (!this.isOptionsOpen) {
+                this.showOptionsPage();
+            }
+        });
   
-      this.mapSelectButton = this.add.image(700, 100, 'mapSelectButton')
-        .setInteractive()
-        .setScale(1);
+        this.mapSelectButton = this.add.image(700, 100, 'mapSelectButton')
+            .setInteractive()
+            .setScale(1);
   
-      this.mapSelectButton.on('pointerdown', () => {
-        if (!this.mapSelectionActive) {
-          this.showMapSelection();
-        }
-      });
+        this.mapSelectButton.on('pointerdown', () => {
+            if (!this.mapSelectionActive) {
+                this.showMapSelection();
+            }
+        });
   
-      this.mapText = this.add.text(400, 500, `Selected Map: ${this.selectedMap}`, {
-        fontSize: '24px',
-        fill: '#fff'
-      }).setOrigin(0.5);
+        this.mapText = this.add.text(400, 500, `Selected Map: ${this.selectedMap}`, {
+            fontSize: '24px',
+            fill: '#fff'
+        }).setOrigin(0.5);
   
-      this.menuSoundtrack = this.sound.add('menuSoundtrack', { loop: true });
-      this.playMenuSoundtrack();
+        this.menuSoundtrack = this.sound.add('menuSoundtrack', { loop: true });
+        this.playMenuSoundtrack();
+
+        // Store main menu elements
+        this.mainMenuElements = [this.startButton, this.optionsButton, this.mapSelectButton, this.mapText];
+    }
+
+    
+
+    selectColor(color, selectedButton) {
+        this.selectedColor = color;
+        this.colorButtons.forEach(button => {
+            button.setTint(button === selectedButton ? 0xffff00 : 0xffffff);
+        });
+        this.checkStartGame();
     }
   
     showMapSelection() {
@@ -595,57 +614,104 @@ class MainMenuScene extends Phaser.Scene {
       this.hideMapSelection();
     }
 
-    showDifficultySelection() {
-        // Hide or disable the start and options buttons
-        this.children.list.forEach(child => {
-            if (child instanceof Phaser.GameObjects.Image) {
-                child.setVisible(false);
-            }
+    showSelectionScreen() {
+        // Hide main menu elements
+        this.mainMenuElements.forEach(element => element.setVisible(false));
+    
+        // Add black background
+        const background = this.add.rectangle(400, 300, 800, 600, 0x000000);
+    
+        // Add title
+        const title = this.add.text(400, 100, 'Select Your Rabbit', { 
+            fontSize: '32px', 
+            fill: '#fff' 
+        }).setOrigin(0.5);
+    
+        // Color selection
+        const colorTitle = this.add.text(200, 150, 'Select a color', { 
+            fontSize: '24px', 
+            fill: '#fff' 
+        }).setOrigin(0.5);
+    
+        const colors = ['white', 'yellow', 'grey'];
+        colors.forEach((color, index) => {
+            const button = this.add.image(130 + index * 70, 250, `${color}-standing`)
+                .setScale(1)
+                .setInteractive();
+    
+            button.on('pointerdown', () => this.selectColor(color, button));
+            button.on('pointerover', () => button.setScale(1.05));
+            button.on('pointerout', () => button.setScale(1));
+    
+            this.colorButtons.push(button);
         });
-
-        // Create difficulty buttons
+    
+        // Difficulty selection
+        const difficultyTitle = this.add.text(600, 150, 'Select difficulty', { 
+            fontSize: '24px', 
+            fill: '#fff' 
+        }).setOrigin(0.5);
+    
         const difficulties = ['Easy', 'Normal', 'Hard'];
         difficulties.forEach((diff, index) => {
-            const button = this.add.text(400, 250 + index * 70, diff, { 
-                fontSize: '32px', 
+            const button = this.add.text(600, 200 + index * 50, diff, { 
+                fontSize: '24px', 
                 fill: '#fff',
-                backgroundColor: '#000',
+                backgroundColor: '#333',
                 padding: { x: 20, y: 10 }
             }).setOrigin(0.5).setInteractive();
-
-            button.on('pointerdown', () => this.startGame(diff.toLowerCase()));
+    
+            button.on('pointerdown', () => this.selectDifficulty(diff.toLowerCase(), button));
             button.on('pointerover', () => button.setStyle({ fill: '#ff0' }));
             button.on('pointerout', () => button.setStyle({ fill: '#fff' }));
-
+    
             this.difficultyButtons.push(button);
         });
-
-        // Add a back button
+    
+        // Back button
         const backButton = this.add.text(400, 500, 'Back', { 
             fontSize: '24px', 
             fill: '#fff',
             backgroundColor: '#000',
             padding: { x: 15, y: 8 }
         }).setOrigin(0.5).setInteractive();
-
-        backButton.on('pointerdown', () => this.hideDifficultySelection());
+    
+        backButton.on('pointerdown', () => this.hideSelectionScreen());
         backButton.on('pointerover', () => backButton.setStyle({ fill: '#ff0' }));
         backButton.on('pointerout', () => backButton.setStyle({ fill: '#fff' }));
-
-        this.difficultyButtons.push(backButton);
+    
+        // Store selection screen elements
+        this.selectionScreenElements = [
+            background, title, colorTitle, difficultyTitle, backButton,
+            ...this.colorButtons, ...this.difficultyButtons
+        ];
     }
 
-    hideDifficultySelection() {
-        // Show the start and options buttons again
-        this.children.list.forEach(child => {
-            if (child instanceof Phaser.GameObjects.Image) {
-                child.setVisible(true);
+    selectDifficulty(difficulty, selectedButton) {
+        this.selectedDifficulty = difficulty;
+        this.difficultyButtons.forEach(button => {
+            if (button instanceof Phaser.GameObjects.Text && button.text !== 'Back') {
+                button.setStyle({ backgroundColor: button === selectedButton ? '#ff0' : '#333' });
             }
         });
+        this.checkStartGame();
+    }
 
-        // Remove difficulty buttons
-        this.difficultyButtons.forEach(button => button.destroy());
+    checkStartGame() {
+        if (this.selectedColor && this.selectedDifficulty) {
+            this.startGame(this.selectedDifficulty);
+        }
+    }
+
+    hideSelectionScreen() {
+        // Hide selection screen elements
+        this.selectionScreenElements.forEach(element => element.destroy());
+        this.selectionScreenElements = [];
+        this.colorButtons = [];
         this.difficultyButtons = [];
+
+        // Show main menu elements
+        this.mainMenuElements.forEach(element => element.setVisible(true));
     }
 
     playMenuSoundtrack() {
@@ -662,7 +728,11 @@ class MainMenuScene extends Phaser.Scene {
 
     startGame(difficulty) {
         this.stopMenuSoundtrack();
-        this.scene.start('GameScene', { difficulty: difficulty, map: this.selectedMap });
+        this.scene.start('GameScene', { 
+            difficulty: difficulty, 
+            map: this.selectedMap,
+            rabbitColor: this.selectedColor 
+        });
     }
 
     showOptionsPage() {
@@ -744,6 +814,8 @@ class GameScene extends Phaser.Scene {
         super('GameScene');
         this.lastTime = 0;
         this.currentMap = 'sky'; 
+        this.rabbitColor = 'white';
+        this.botColor = 'white';
     }
 
     init(data) {
@@ -751,6 +823,8 @@ class GameScene extends Phaser.Scene {
             this.cpuDifficulty = data.difficulty;
         }
         this.currentMap = data.map || 'sky'; 
+        this.rabbitColor = data.rabbitColor || 'white';
+        this.botColor = this.playerColor === 'white' ? 'yellow' : (this.playerColor === 'yellow' ? 'grey' : 'white');
         this.gameState = {
             player: null,
             bot: null,
@@ -783,6 +857,7 @@ class GameScene extends Phaser.Scene {
     }
     
     preload() {
+        const colors = ['white', 'yellow', 'grey'];
         this.load.image('sky', 'assets/sky.png');
         this.load.image('platform', 'assets/platform.png');
         this.load.image('cloud', 'assets/cloud.png');
@@ -794,16 +869,18 @@ class GameScene extends Phaser.Scene {
         this.load.image('space-platform', 'assets/space-platform.png');
         this.load.image('sky_preview', 'assets/sky_preview.png');
         this.load.image('city_preview', 'assets/city_preview.png');
-        this.load.image('rabbit-standing', 'assets/rabbit/white/standing.png');
-        this.load.image('rabbit-jumpingstraight', 'assets/rabbit/white/jumpingstraight.png');
-        this.load.image('rabbit-lookingright', 'assets/rabbit/white/lookingright.png');
-        this.load.image('rabbit-walkingright1', 'assets/rabbit/white/walkingright1.png');
-        this.load.image('rabbit-walkingright2', 'assets/rabbit/white/walkingright2.png');
-        this.load.image('rabbit-jumpingright', 'assets/rabbit/white/jumpingright.png');
-        this.load.image('rabbit-lookingleft', 'assets/rabbit//white/lookingleft.png');
-        this.load.image('rabbit-walkingleft1', 'assets/rabbit/white/walkingleft1.png');
-        this.load.image('rabbit-walkingleft2', 'assets/rabbit/white/walkingleft2.png');
-        this.load.image('rabbit-jumpingleft', 'assets/rabbit/white/jumpingleft.png');
+        colors.forEach(color => {
+            this.load.image(`rabbit-standing-${color}`, `assets/rabbit/${color}/standing.png`);
+            this.load.image(`rabbit-jumpingstraight-${color}`, `assets/rabbit/${color}/jumpingstraight.png`);
+            this.load.image(`rabbit-lookingright-${color}`, `assets/rabbit/${color}/lookingright.png`);
+            this.load.image(`rabbit-walkingright1-${color}`, `assets/rabbit/${color}/walkingright1.png`);
+            this.load.image(`rabbit-walkingright2-${color}`, `assets/rabbit/${color}/walkingright2.png`);
+            this.load.image(`rabbit-jumpingright-${color}`, `assets/rabbit/${color}/jumpingright.png`);
+            this.load.image(`rabbit-lookingleft-${color}`, `assets/rabbit/${color}/lookingleft.png`);
+            this.load.image(`rabbit-walkingleft1-${color}`, `assets/rabbit/${color}/walkingleft1.png`);
+            this.load.image(`rabbit-walkingleft2-${color}`, `assets/rabbit/${color}/walkingleft2.png`);
+            this.load.image(`rabbit-jumpingleft-${color}`, `assets/rabbit/${color}/jumpingleft.png`);
+        });
         this.load.image('button', 'assets/button.png');
         this.load.image('returnMenuButton', 'assets/Return-Menu-Button.png');
         this.load.audio('gameSoundtrack', 'assets/game_soundtrack.mp3');
@@ -1062,54 +1139,52 @@ class GameScene extends Phaser.Scene {
 
     createPlayer() {
         const spawnPoint = this.getRandomSpawnPoint();
-        this.gameState.player = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, 'rabbit-standing')
+        this.gameState.player = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, `rabbit-standing-${this.rabbitColor}`)
             .setBounce(0.1)
             .setCollideWorldBounds(true);
-    
 
-            this.gameState.player.setCollideWorldBounds(true);
-            this.gameState.player.body.onWorldBounds = true;
+        this.gameState.player.setCollideWorldBounds(true);
+        this.gameState.player.body.onWorldBounds = true;
 
         // Create animations
         this.anims.create({
             key: 'left',
             frames: [
-                { key: 'rabbit-lookingleft' },
-                { key: 'rabbit-lookingleft' },
-                { key: 'rabbit-walkingleft1' },
-                { key: 'rabbit-jumpingleft' },
-                { key: 'rabbit-walkingleft2' },
-                { key: 'rabbit-lookingleft' }
+                { key: `rabbit-lookingleft-${this.rabbitColor}` },
+                { key: `rabbit-lookingleft-${this.rabbitColor}` },
+                { key: `rabbit-walkingleft1-${this.rabbitColor}` },
+                { key: `rabbit-jumpingleft-${this.rabbitColor}` },
+                { key: `rabbit-walkingleft2-${this.rabbitColor}` },
+                { key: `rabbit-lookingleft-${this.rabbitColor}` }
             ],
             frameRate: 17,
             repeat: -1
         });
-    
+
         this.anims.create({
             key: 'right',
             frames: [
-                { key: 'rabbit-lookingright' },
-                { key: 'rabbit-lookingright' },
-                { key: 'rabbit-walkingright1' },
-                { key: 'rabbit-jumpingright' },
-                { key: 'rabbit-walkingright2' },
-                { key: 'rabbit-lookingright' }
+                { key: `rabbit-lookingright-${this.rabbitColor}` },
+                { key: `rabbit-lookingright-${this.rabbitColor}` },
+                { key: `rabbit-walkingright1-${this.rabbitColor}` },
+                { key: `rabbit-jumpingright-${this.rabbitColor}` },
+                { key: `rabbit-walkingright2-${this.rabbitColor}` },
+                { key: `rabbit-lookingright-${this.rabbitColor}` }
             ],
             frameRate: 17,
             repeat: -1
         });
-    
+
         this.anims.create({
             key: 'idle',
-            frames: [{ key: 'rabbit-standing' }],
+            frames: [{ key: `rabbit-standing-${this.rabbitColor}` }],
             frameRate: 10,
             repeat: 0
-            
         });
-    
+
         // Set up cursor keys for input
         this.gameState.cursors = this.input.keyboard.createCursorKeys();
-    
+
         // Create hitboxes for the player
         this.gameState.playerHead = this.createHitbox(this.gameState.player, -this.gameState.player.height / 4);
         this.gameState.playerFeet = this.createHitbox(this.gameState.player, this.gameState.player.height / 4);
@@ -1117,17 +1192,51 @@ class GameScene extends Phaser.Scene {
 
     createBot() {
         const spawnPoint = this.getRandomSpawnPoint();
-        this.gameState.bot = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, 'rabbit-standing')
+        this.gameState.bot = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, `rabbit-standing-${this.botColor}`)
             .setBounce(0.1)
             .setCollideWorldBounds(true);
 
-            this.gameState.bot.setCollideWorldBounds(true);
-            this.gameState.bot.body.onWorldBounds = true;
+        this.gameState.bot.setCollideWorldBounds(true);
+        this.gameState.bot.body.onWorldBounds = true;
         // Ensure the bot is on the ground
         this.gameState.bot.setOrigin(0.5, 1);
     
         this.gameState.botHead = this.createHitbox(this.gameState.bot, -this.gameState.bot.height / 2);
         this.gameState.botFeet = this.createHitbox(this.gameState.bot, 0);  // Adjust to be at the bottom of the sprite
+
+        // Create bot animations
+        this.anims.create({
+            key: 'botLeft',
+            frames: [
+                { key: `rabbit-lookingleft-${this.botColor}` },
+                { key: `rabbit-lookingleft-${this.botColor}` },
+                { key: `rabbit-walkingleft1-${this.botColor}` },
+                { key: `rabbit-walkingleft2-${this.botColor}` },
+                { key: `rabbit-walkingleft1-${this.botColor}` }
+            ],
+            frameRate: 10,
+            repeat: -1
+        });
+
+        this.anims.create({
+            key: 'botRight',
+            frames: [
+                { key: `rabbit-lookingright-${this.botColor}` },
+                { key: `rabbit-lookingright-${this.botColor}` },
+                { key: `rabbit-walkingright1-${this.botColor}` },
+                { key: `rabbit-walkingright2-${this.botColor}` },
+                { key: `rabbit-walkingright1-${this.botColor}` }
+            ],
+            frameRate: 10,
+            repeat: -1
+        });
+
+        this.anims.create({
+            key: 'botIdle',
+            frames: [{ key: `rabbit-standing-${this.botColor}` }],
+            frameRate: 10,
+            repeat: 0
+        });
     }
 
     getRandomSpawnPoint() {
@@ -1607,9 +1716,9 @@ class GameScene extends Phaser.Scene {
                 bot.anims.play('botIdle', true);
             }
         } else if (isJumping) {
-            bot.setTexture(`rabbit-jumping${this.botDirection}`);
+            bot.setTexture(`rabbit-jumping${this.botDirection}-${this.botColor}`);
         } else if (isFalling) {
-            bot.setTexture(`rabbit-walking${this.botDirection}2`);
+            bot.setTexture(`rabbit-walking${this.botDirection}2-${this.botColor}`);
         }
     
         bot.setFlipX(false);

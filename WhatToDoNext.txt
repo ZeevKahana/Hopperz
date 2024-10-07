@@ -4,16 +4,14 @@
 4. Shield powerup. DONE
 5. Options button functional. DONE.
 6. .bat file that starts the game up. DONE
-7. CPU difficulty (easy/normal/hard)
-8. Implement rabbit sprite instead of dude.
-9. Make rabbit sprite different colors to choose from.
-10. make more bots on the screen (3 bots + 1 player)
-11. register/login connected to API
-12. more maps.
+7. Implement rabbit sprite instead of dude. DONE
+8. more maps. DONE
+9. Make rabbit different colors to choose from. DONE
+10. CPU difficulty (easy/normal/hard) (kinda done)
+11. make more bots on the screen (3 bots + 1 player)
+12. register/login connected to API
 13. store
 
-
-15. inverted controls options in the options menu (troll)
 
 
 18.Mode variations - after pressing start - give players match options to choose color, and game settings, number of enemies
