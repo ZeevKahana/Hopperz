@@ -31,3 +31,6 @@ new Rabbit sprite for player and bot
 10/06/24 - ver 0.18
 -improved 'city' map
 -added new 'space' map
+
+10/07/24 
+-added different sprite colors to choose from in the menu screen (currently have white / yellow / grey colors. more in the future)
