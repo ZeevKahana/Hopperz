@@ -34,3 +34,8 @@ new Rabbit sprite for player and bot
 
 10/07/24 
 -added different sprite colors to choose from in the menu screen (currently have white / yellow / grey colors. more in the future)
+
+10/07/24
+-improved 'space' map.
+
+game is now playable. still need to add: better cpu difficulty, 3 cpu + 1 player, register/login connected to API, store
