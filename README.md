@@ -32,13 +32,13 @@ new Rabbit sprite for player and bot
 -improved 'city' map
 -added new 'space' map
 
-10/07/24 
+10/07/24 - ver 0.2
 -added different sprite colors to choose from in the menu screen (currently have white / yellow / grey colors. more in the future)
 -improved 'space' map.
 
 game is now playable. still need to add: better cpu difficulty, 3 cpu + 1 player, register/login connected to API, store
 
-10/08/24
+10/08/24 - ver 0.21
 -added a working DB connected to API
 -added max velocity speed for rabbits when falling
 -fixed bugs
