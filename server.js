@@ -2,20 +2,18 @@ const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const path = require('path');
+require('dotenv').config();
+
 const app = express();
 
-// MongoDB connection string
-const mongoURI = 'mongodb://localhost:27017/humperzdb';
-
-// Connect to MongoDB
-mongoose.connect(mongoURI)
-  .then(() => console.log('MongoDB connected successfully'))
+// MongoDB connection
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB connected successfully to hopperzdb'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// Add this error handler for ongoing connection issues
-mongoose.connection.on('error', err => {
-  console.error('MongoDB connection error:', err);
-});
+// Middleware
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Create a User model
 const User = mongoose.model('User', {
@@ -23,18 +21,11 @@ const User = mongoose.model('User', {
     password: String
 });
 
-// Middleware to parse JSON bodies
-app.use(express.json());
-
-// Serve static files from the current directory
-app.use(express.static(__dirname));
-
-// Serve hopz.html for the root route
+// Routes
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'hopz.html'));
+    res.sendFile(path.join(__dirname, 'public', 'hopz.html'));
 });
 
-// Register route
 app.post('/api/register', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -48,7 +39,6 @@ app.post('/api/register', async (req, res) => {
     }
 });
 
-// Login route
 app.post('/api/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -66,4 +56,7 @@ app.post('/api/login', async (req, res) => {
 
 // Start the server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Serving files from: ${path.join(__dirname, 'public')}`);
+});
