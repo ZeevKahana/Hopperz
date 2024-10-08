@@ -1,6 +1,12 @@
 {
   "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "easystarjs": "^0.4.4",
+    "express": "^4.21.0",
     "helmet": "^7.1.0",
+    "mongoose": "^8.7.0",
     "phaser": "^3.80.1"
   },
   "name": "project",
@@ -12,5 +18,8 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "description": "",
+  "devDependencies": {
+    "browser-sync": "^3.0.3"
+  }
 }
