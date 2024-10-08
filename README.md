@@ -44,3 +44,8 @@ new Rabbit sprite for player and bot
 -improved 'space' map.
 
 game is now playable. still need to add: better cpu difficulty, 3 cpu + 1 player, register/login connected to API, store
+
+10/08/24
+-added a working DB connected to API
+-added max velocity speed for rabbits when falling
+-fixed bugs
