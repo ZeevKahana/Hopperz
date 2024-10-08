@@ -35,6 +35,11 @@ new Rabbit sprite for player and bot
 10/07/24 
 -added different sprite colors to choose from in the menu screen (currently have white / yellow / grey colors. more in the future)
 
+10/08/24
+-added a working DB connected to API
+-added max velocity speed for rabbits when falling
+-fixed bugs
+
 10/07/24
 -improved 'space' map.
 
