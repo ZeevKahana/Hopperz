@@ -42,3 +42,9 @@ game is now playable. still need to add: better cpu difficulty, 3 cpu + 1 player
 -added a working DB connected to API
 -added max velocity speed for rabbits when falling
 -fixed bugs
+
+
+10/10/24 ver 0.22
+-ingame currency added connected to DB
+-shop added connected to DB
+-fixed bugs
