@@ -7,10 +7,11 @@
 7. Implement rabbit sprite instead of dude. DONE
 8. more maps. DONE
 9. Make rabbit different colors to choose from. DONE
-10. CPU difficulty (easy/normal/hard) (kinda done)
-11. make more bots on the screen (3 bots + 1 player)
-12. register/login connected to API. DONE
-13. store
+10. register/login connected to API. DONE
+11. store. DONE
+12. CPU difficulty (easy/normal/hard) (kinda done)
+13. make more bots on the screen (3 bots + 1 player)
+14. fix bugs.
 
 
 

@@ -5,7 +5,8 @@ const CONSTANTS = {
     RESPAWN_DELAY: 3000,
     HITBOX_SIZE: { width: 16, height: 5 },
     WIN_SCORE: 10,
-    GAME_DURATION: 3 * 60 * 1000
+    GAME_DURATION: 3 * 60 * 1000,
+    MAX_FALLING_SPEED: 1250
 };
 
 
@@ -253,7 +254,6 @@ class BotAI {
 class LoginScene extends Phaser.Scene {
     constructor() {
         super('LoginScene');
-        this.users = [];
         this.music = null;
         this.musicReady = false;
         this.debugText = null;
@@ -275,7 +275,6 @@ class LoginScene extends Phaser.Scene {
     }
 
     create() {
-        this.loadUsers();
         this.add.image(400, 300, 'loginBackground');
 
         const loginForm = this.add.dom(400, 300).createFromCache('loginform');
@@ -287,12 +286,8 @@ class LoginScene extends Phaser.Scene {
                 this.login(loginForm.getChildByName('email').value, loginForm.getChildByName('password').value);
             } else if (event.target.name === 'registerButton') {
                 this.register(loginForm.getChildByName('email').value, loginForm.getChildByName('password').value);
-            } else if (event.target.name === 'deleteButton') {
-                this.deleteUser(loginForm.getChildByName('email').value);
             }
         });
-
-        this.updateUserList();
 
         this.createAudioToggle();
 
@@ -370,33 +365,33 @@ class LoginScene extends Phaser.Scene {
         }
     }
 
-    loadUsers() {
-        const savedUsers = localStorage.getItem('users');
-        this.users = savedUsers ? JSON.parse(savedUsers) : [];
-    }
-
-    saveUsers() {
-        localStorage.setItem('users', JSON.stringify(this.users));
-    }
+    
 
     login(email, password) {
-        // Email validation regex
-        const emailRegex = /\S+@\S+\.\S+/;
-        
-        // Validate email
-        if (!emailRegex.test(email)) {
-            alert('Invalid email format. Please use a valid email address.');
-            return;
-        }
-
-        const user = this.users.find(u => u.email === email && u.password === password);
-        if (user) {
-            console.log('Login successful');
-            this.stopMusic();  // Stop the music before changing scenes
-            this.scene.start('MainMenu');
-        } else {
-            alert('Invalid email or password.');
-        }
+        fetch('/api/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, password }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('Login successful');
+                localStorage.setItem('userEmail', email);
+                this.scene.start('MainMenu', { 
+                    carrotCount: data.carrots, 
+                    purchasedItems: data.purchasedItems 
+                });
+            } else {
+                alert('Invalid email or password.');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred during login.');
+        });
     }
 
     stopMusic() {
@@ -407,59 +402,37 @@ class LoginScene extends Phaser.Scene {
     }
 
     register(email, password) {
-        // Email validation regex
         const emailRegex = /\S+@\S+\.\S+/;
         
-        // Validate email
         if (!emailRegex.test(email)) {
             alert('Invalid email format. Please use a valid email address.');
             return;
         }
 
-        // Validate password length
         if (password.length < 6) {
             alert('Password must be at least 6 characters long.');
             return;
         }
 
-        // Check if user already exists
-        if (this.users.some(u => u.email === email)) {
-            alert('User already exists.');
-            return;
-        }
-
-        // If all validations pass, register the user
-        this.users.push({ email, password });
-        this.saveUsers(); // Assuming you have a method to save users to localStorage
-        alert('Registration successful. You can now log in.');
-        this.updateUserList(); // Update the displayed user list
-    }
-
-    deleteUser(email) {
-        const index = this.users.findIndex(u => u.email === email);
-        if (index !== -1) {
-            this.users.splice(index, 1);
-            this.saveUsers();
-            alert('User deleted successfully.');
-            this.updateUserList();
-        } else {
-            alert('User not found.');
-        }
-    }
-
-    updateUserList() {
-        // Remove existing user list if it exists
-        if (this.userList) {
-            this.userList.destroy();
-        }
-
-        // Create a new user list
-        let userListText = 'Registered Users:\n';
-        this.users.forEach(user => {
-            userListText += `${user.email}\n`;
+        fetch('/api/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email, password }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('Registration successful. You can now log in.');
+            } else {
+                alert('Registration failed. ' + (data.error || 'Please try again.'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred during registration.');
         });
-
-        this.userList = this.add.text(10, 50, userListText, { fontSize: '16px', fill: '#fff' });
     }
 }
 
@@ -480,6 +453,9 @@ class MainMenuScene extends Phaser.Scene {
         this.colorButtons = [];
         this.mainMenuElements = [];
         this.selectionScreenElements = [];
+        this.carrotCount = 0;
+        this.isShopOpen = false;
+        this.purchasedItems = new Set();
     }
   
     preload() {
@@ -494,47 +470,85 @@ class MainMenuScene extends Phaser.Scene {
       this.load.image('white-standing', 'assets/rabbit/white/standing.png');
       this.load.image('yellow-standing', 'assets/rabbit/yellow/standing.png');
       this.load.image('grey-standing', 'assets/rabbit/grey/standing.png');
+      this.load.image('blue-standing', 'assets/rabbit/blue/standing.png');
+      this.load.image('carrot', 'assets/carrot.png');
+      this.load.image('shopIcon', 'assets/shop.png');
     }
   
     create() {
         this.add.image(400, 300, 'menuBackground').setScale(1.28);
-  
+    
+        // Start button
         this.startButton = this.add.image(402, 385, 'startButton')
             .setInteractive()
             .setScale(0.85);
-  
         this.startButton.on('pointerdown', () => this.showSelectionScreen());
-  
+    
+        // Shop button (new position)
+        this.shopButton = this.add.image(223, 373, 'shopIcon')
+            .setInteractive()
+            .setScale(1);
+        this.shopButton.on('pointerdown', () => this.toggleShop());
+    
+        // Options button
         this.optionsButton = this.add.image(600, 385, 'optionsButton')
             .setInteractive()
             .setScale(0.10);
-  
         this.optionsButton.on('pointerdown', () => {
             if (!this.isOptionsOpen) {
                 this.showOptionsPage();
             }
         });
-  
+    
+        // Map select button
         this.mapSelectButton = this.add.image(700, 100, 'mapSelectButton')
             .setInteractive()
             .setScale(1);
-  
         this.mapSelectButton.on('pointerdown', () => {
             if (!this.mapSelectionActive) {
                 this.showMapSelection();
             }
         });
-  
+    
+        // Map text
         this.mapText = this.add.text(400, 500, `Selected Map: ${this.selectedMap}`, {
             fontSize: '24px',
             fill: '#fff'
         }).setOrigin(0.5);
-  
+    
+        // Carrot count display
+        this.carrotIcon = this.add.image(20, 20, 'carrot').setOrigin(0, 0.5).setScale(0.5);
+        this.carrotText = this.add.text(50, 20, '0', { fontSize: '24px', fill: '#fff' }).setOrigin(0, 0.5);
+        
+        // Initialize purchasedItems if not already done
+        if (!this.purchasedItems) {
+            this.purchasedItems = new Set();
+        }
+    
+        // Check for initial data passed from login
+        const initData = this.scene.settings.data;
+        if (initData) {
+            if (initData.carrotCount !== undefined) {
+                this.carrotCount = initData.carrotCount;
+                this.carrotText.setText(`${this.carrotCount}`);
+            }
+            if (initData.purchasedItems) {
+                this.purchasedItems = new Set(initData.purchasedItems);
+            }
+        } else {
+            // If no initial data, fetch from server
+            this.fetchCarrotCount();
+        }
+    
+        // Menu soundtrack
         this.menuSoundtrack = this.sound.add('menuSoundtrack', { loop: true });
         this.playMenuSoundtrack();
-
+    
+        // Event listener for refreshing carrot count
+        this.events.on('refreshCarrotCount', this.fetchCarrotCount, this);
+    
         // Store main menu elements
-        this.mainMenuElements = [this.startButton, this.optionsButton, this.mapSelectButton, this.mapText];
+        this.mainMenuElements = [this.startButton, this.shopButton, this.optionsButton, this.mapSelectButton, this.mapText];
     }
 
     
@@ -633,8 +647,8 @@ class MainMenuScene extends Phaser.Scene {
             fill: '#fff' 
         }).setOrigin(0.5);
     
-        const colors = ['white', 'yellow', 'grey'];
-        colors.forEach((color, index) => {
+        const baseColors = ['white', 'yellow', 'grey'];
+        baseColors.forEach((color, index) => {
             const button = this.add.image(130 + index * 70, 250, `${color}-standing`)
                 .setScale(1)
                 .setInteractive();
@@ -645,6 +659,19 @@ class MainMenuScene extends Phaser.Scene {
     
             this.colorButtons.push(button);
         });
+    
+        // Add blue color option if purchased
+        if (this.purchasedItems.has('blueRabbit')) {
+            const blueButton = this.add.image(130, 320, 'blue-standing')
+                .setScale(1)
+                .setInteractive();
+    
+            blueButton.on('pointerdown', () => this.selectColor('blue', blueButton));
+            blueButton.on('pointerover', () => blueButton.setScale(1.05));
+            blueButton.on('pointerout', () => blueButton.setScale(1));
+    
+            this.colorButtons.push(blueButton);
+        }
     
         // Difficulty selection
         const difficultyTitle = this.add.text(600, 150, 'Select difficulty', { 
@@ -807,6 +834,136 @@ class MainMenuScene extends Phaser.Scene {
         
         localStorage.setItem('controlScheme', this.currentControlScheme);
     }
+
+    fetchCarrotCount() {
+        const userEmail = localStorage.getItem('userEmail');
+        if (userEmail) {
+            fetch('/api/getCarrotCount', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email: userEmail }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    this.carrotCount = data.carrotCount;
+                    this.carrotText.setText(`${this.carrotCount}`);
+                    if (data.purchasedItems) {
+                        this.purchasedItems = new Set(data.purchasedItems);
+                    }
+                } else {
+                    console.error('Failed to fetch carrot count:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching carrot count:', error);
+            });
+        }
+    }
+    toggleShop() {
+        if (this.isShopOpen) {
+            this.closeShop();
+        } else {
+            this.openShop();
+        }
+    }
+
+    openShop() {
+        this.isShopOpen = true;
+    
+        // Create shop container
+        this.shopContainer = this.add.container(400, 300);
+    
+        // Add background
+        const bg = this.add.rectangle(0, 0, 400, 300, 0x000000, 0.8);
+        this.shopContainer.add(bg);
+    
+        // Add title
+        const title = this.add.text(0, -130, 'Shop', { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
+        this.shopContainer.add(title);
+    
+        // Add blue rabbit item
+        let blueRabbit;
+        if (this.textures.exists('blue-standing')) {
+            blueRabbit = this.add.image(-100, 0, 'blue-standing').setScale(1);
+        } else {
+            console.error('Blue rabbit image not found: blue-standing');
+            blueRabbit = this.add.rectangle(-100, 0, 50, 50, 0x0000FF); // Blue rectangle as fallback
+        }
+        this.shopContainer.add(blueRabbit);
+    
+        if (this.purchasedItems.has('blueRabbit')) {
+            const soldText = this.add.text(-100, 70, 'SOLD!!!', { fontSize: '24px', fill: '#ff0000' }).setOrigin(0.5);
+            this.shopContainer.add(soldText);
+        } else {
+            // Add price with carrot icon
+            const priceText = this.add.text(-130, 70, '100', { fontSize: '24px', fill: '#fff' }).setOrigin(0.5);
+            this.shopContainer.add(priceText);
+    
+            const carrotIcon = this.add.image(-90, 70, 'carrot').setScale(0.4);
+            this.shopContainer.add(carrotIcon);
+    
+            const buyButton = this.add.text(-100, 110, 'Buy', { fontSize: '24px', fill: '#fff', backgroundColor: '#4a4' })
+                .setOrigin(0.5)
+                .setInteractive()
+                .setPadding(10);
+            this.shopContainer.add(buyButton);
+    
+            buyButton.on('pointerdown', () => this.purchaseItem('blueRabbit', 100));
+        }
+    
+        // Add close button
+        const closeButton = this.add.text(180, -130, 'X', { fontSize: '24px', fill: '#fff' })
+            .setInteractive();
+        this.shopContainer.add(closeButton);
+    
+        closeButton.on('pointerdown', () => this.closeShop());
+    }
+
+    closeShop() {
+        this.isShopOpen = false;
+        if (this.shopContainer) {
+            this.shopContainer.destroy();
+            this.shopContainer = null;
+        }
+    }
+
+    purchaseItem(itemId, price) {
+        if (this.carrotCount >= price) {
+            fetch('/api/purchaseItem', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    email: localStorage.getItem('userEmail'),
+                    itemId: itemId,
+                    price: price
+                }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    this.carrotCount = data.newCarrotCount;
+                    this.carrotText.setText(`${this.carrotCount}`);
+                    this.purchasedItems.add(itemId);  // Mark item as purchased
+                    alert('Purchase successful!');
+                    this.closeShop();
+                    this.openShop();  // Reopen shop to reflect changes
+                } else {
+                    alert('Purchase failed: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred during purchase.');
+            });
+        } else {
+            alert('Not enough carrots!');
+        }
+    }
 }
 
 class GameScene extends Phaser.Scene {
@@ -857,7 +1014,7 @@ class GameScene extends Phaser.Scene {
     }
     
     preload() {
-        const colors = ['white', 'yellow', 'grey'];
+        const colors = ['white', 'yellow', 'grey', 'blue'];
         this.load.image('sky', 'assets/sky.png');
         this.load.image('platform', 'assets/platform.png');
         this.load.image('cloud', 'assets/cloud.png');
@@ -997,6 +1154,15 @@ class GameScene extends Phaser.Scene {
             this.botShieldStrategy();
             this.botDecision();
     
+            if (this.gameState.player.body.velocity.y > CONSTANTS.MAX_FALLING_SPEED) {
+                this.gameState.player.setVelocityY(CONSTANTS.MAX_FALLING_SPEED);
+            }
+    
+            // Limit falling speed for bot
+            if (this.gameState.bot.body.velocity.y > CONSTANTS.MAX_FALLING_SPEED) {
+                this.gameState.bot.setVelocityY(CONSTANTS.MAX_FALLING_SPEED);
+            }
+    
             // Keep player within screen boundaries
             this.gameState.player.x = Phaser.Math.Clamp(this.gameState.player.x, 
                 this.gameState.player.width / 2, 
@@ -1010,6 +1176,7 @@ class GameScene extends Phaser.Scene {
 
         if (this.currentMap === 'space') {
             this.wrapEntities();
+            this.handleMovingPlatforms();
         }
 
         if (!this.gameState.botDead) {
@@ -1068,6 +1235,37 @@ class GameScene extends Phaser.Scene {
         this.updateHitbox(this.gameState.botFeet, this.gameState.bot, this.gameState.bot.height / 2);
     }
 
+    handleMovingPlatforms() {
+        const handleEntityOnPlatform = (entity) => {
+            let onMovingPlatform = false;
+            this.gameState.movingPlatforms.forEach(platform => {
+                if (entity.body.touching.down && entity.y <= platform.y) {
+                    onMovingPlatform = true;
+                    const deltaX = platform.x - platform.previousX;
+                    entity.x += deltaX;
+                }
+            });
+            return onMovingPlatform;
+        };
+    
+        const playerOnMovingPlatform = handleEntityOnPlatform(this.gameState.player);
+        const botOnMovingPlatform = handleEntityOnPlatform(this.gameState.bot);
+    
+        // Update platform previous positions
+        this.gameState.movingPlatforms.forEach(platform => {
+            platform.previousX = platform.x;
+        });
+    
+        // Handle wrapping for entities not on moving platforms
+        if (!playerOnMovingPlatform) {
+            this.wrapEntities(this.gameState.player);
+        }
+        if (!botOnMovingPlatform) {
+            this.wrapEntities(this.gameState.bot);
+        }
+    }
+    
+
     createPlatforms() {
         this.gameState.platforms = this.physics.add.staticGroup();
 
@@ -1113,7 +1311,6 @@ class GameScene extends Phaser.Scene {
         const platformWidth = 200;
         const platformHeight = 32;
     
-        // Calculate the leftmost and rightmost positions for the platforms
         const leftmostPosition = 0;
         const rightmostPosition = gameWidth - platformWidth;
     
@@ -1121,6 +1318,8 @@ class GameScene extends Phaser.Scene {
         const topPlatform = this.gameState.platforms.create(leftmostPosition, gameHeight * 0.3, 'space-platform');
         topPlatform.setDisplaySize(platformWidth, platformHeight);
         topPlatform.refreshBody();
+        topPlatform.isMoving = true;
+        topPlatform.previousX = topPlatform.x;
         
         this.tweens.add({
             targets: topPlatform,
@@ -1128,13 +1327,18 @@ class GameScene extends Phaser.Scene {
             duration: 5000,
             ease: 'Sine.easeInOut',
             yoyo: true,
-            repeat: -1
+            repeat: -1,
+            onUpdate: () => {
+                topPlatform.refreshBody();
+            }
         });
     
         // Create bottom platform (moving right to left)
         const bottomPlatform = this.gameState.platforms.create(rightmostPosition, gameHeight * 0.7, 'space-platform');
         bottomPlatform.setDisplaySize(platformWidth, platformHeight);
         bottomPlatform.refreshBody();
+        bottomPlatform.isMoving = true;
+        bottomPlatform.previousX = bottomPlatform.x;
         
         this.tweens.add({
             targets: bottomPlatform,
@@ -1142,14 +1346,14 @@ class GameScene extends Phaser.Scene {
             duration: 5000,
             ease: 'Sine.easeInOut',
             yoyo: true,
-            repeat: -1
+            repeat: -1,
+            onUpdate: () => {
+                bottomPlatform.refreshBody();
+            }
         });
     
         // Store references to the platforms
         this.gameState.movingPlatforms = [topPlatform, bottomPlatform];
-    
-        // Set up custom update for moving platforms
-        this.events.on('update', this.updateMovingPlatforms, this);
     }
     
     updateMovingPlatforms() {
@@ -1190,52 +1394,80 @@ class GameScene extends Phaser.Scene {
 
     createPlayer() {
         const spawnPoint = this.getRandomSpawnPoint();
+        
+        // Check if the standing image exists
+        if (!this.textures.exists(`rabbit-standing-${this.rabbitColor}`)) {
+            console.error(`Standing image not found for color: ${this.rabbitColor}`);
+            // Fallback to white if the selected color's image is missing
+            this.rabbitColor = 'white';
+        }
+    
         this.gameState.player = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, `rabbit-standing-${this.rabbitColor}`)
             .setBounce(0.1)
             .setCollideWorldBounds(true);
-
         this.gameState.player.setCollideWorldBounds(true);
         this.gameState.player.body.onWorldBounds = true;
-
-        // Create animations
-        this.anims.create({
-            key: 'left',
-            frames: [
-                { key: `rabbit-lookingleft-${this.rabbitColor}` },
-                { key: `rabbit-lookingleft-${this.rabbitColor}` },
-                { key: `rabbit-walkingleft1-${this.rabbitColor}` },
-                { key: `rabbit-jumpingleft-${this.rabbitColor}` },
-                { key: `rabbit-walkingleft2-${this.rabbitColor}` },
-                { key: `rabbit-lookingleft-${this.rabbitColor}` }
-            ],
-            frameRate: 17,
-            repeat: -1
-        });
-
-        this.anims.create({
-            key: 'right',
-            frames: [
-                { key: `rabbit-lookingright-${this.rabbitColor}` },
-                { key: `rabbit-lookingright-${this.rabbitColor}` },
-                { key: `rabbit-walkingright1-${this.rabbitColor}` },
-                { key: `rabbit-jumpingright-${this.rabbitColor}` },
-                { key: `rabbit-walkingright2-${this.rabbitColor}` },
-                { key: `rabbit-lookingright-${this.rabbitColor}` }
-            ],
-            frameRate: 17,
-            repeat: -1
-        });
-
-        this.anims.create({
-            key: 'idle',
-            frames: [{ key: `rabbit-standing-${this.rabbitColor}` }],
-            frameRate: 10,
-            repeat: 0
-        });
-
+    
+        // Helper function to check if an image exists
+        const checkImage = (key) => {
+            if (!this.textures.exists(key)) {
+                console.error(`Image not found: ${key}`);
+                return false;
+            }
+            return true;
+        };
+    
+        // Create animations with error checking
+        const leftFrames = ['lookingleft', 'walkingleft1', 'jumpingleft', 'walkingleft2']
+            .map(action => {
+                const key = `rabbit-${action}-${this.rabbitColor}`;
+                return checkImage(key) ? { key } : null;
+            })
+            .filter(frame => frame !== null);
+    
+        if (leftFrames.length > 0) {
+            this.anims.create({
+                key: 'left',
+                frames: leftFrames,
+                frameRate: 17,
+                repeat: -1
+            });
+        } else {
+            console.error('No valid frames for left animation');
+        }
+    
+        const rightFrames = ['lookingright', 'walkingright1', 'jumpingright', 'walkingright2']
+            .map(action => {
+                const key = `rabbit-${action}-${this.rabbitColor}`;
+                return checkImage(key) ? { key } : null;
+            })
+            .filter(frame => frame !== null);
+    
+        if (rightFrames.length > 0) {
+            this.anims.create({
+                key: 'right',
+                frames: rightFrames,
+                frameRate: 17,
+                repeat: -1
+            });
+        } else {
+            console.error('No valid frames for right animation');
+        }
+    
+        if (checkImage(`rabbit-standing-${this.rabbitColor}`)) {
+            this.anims.create({
+                key: 'idle',
+                frames: [{ key: `rabbit-standing-${this.rabbitColor}` }],
+                frameRate: 10,
+                repeat: 0
+            });
+        } else {
+            console.error('No valid frame for idle animation');
+        }
+    
         // Set up cursor keys for input
         this.gameState.cursors = this.input.keyboard.createCursorKeys();
-
+    
         // Create hitboxes for the player
         this.gameState.playerHead = this.createHitbox(this.gameState.player, -this.gameState.player.height / 4);
         this.gameState.playerFeet = this.createHitbox(this.gameState.player, this.gameState.player.height / 4);
@@ -1808,8 +2040,11 @@ class GameScene extends Phaser.Scene {
     showWinMessage(message) {
         this.gameState.player.setVelocity(0, 0);
         this.gameState.player.body.enable = false;
+        this.gameState.player.setVisible(false);
         this.gameState.bot.setVelocity(0, 0);
         this.gameState.bot.body.enable = false;
+        this.gameState.bot.setVisible(false);
+    
         if (this.gameState.timerEvent) this.gameState.timerEvent.paused = true;
         
         // Stop the shield spawn timer
@@ -1826,7 +2061,36 @@ class GameScene extends Phaser.Scene {
         this.gameState.gameSoundtrack.stop();
         this.gameState.afterGameSoundtrack.play();
         
-        this.gameState.winText = this.add.text(400, 250, message, { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
+        // Create a container for the win message and carrot reward
+        const container = this.add.container(400, 250);
+    
+        // Add the win message
+        const winText = this.add.text(0, -30, message, { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
+        container.add(winText);
+    
+        if (message.includes('Player Wins')) {
+            // Add the carrot reward message
+            const rewardText = this.add.text(0, 30, '+10', { fontSize: '28px', fill: '#FFD700' }).setOrigin(0.5);
+            container.add(rewardText);
+    
+            // Add the carrot image
+            const carrotImage = this.add.image(50, 30, 'carrot').setScale(0.5);
+            container.add(carrotImage);
+    
+            // Animate the carrot reward
+            this.tweens.add({
+                targets: [rewardText, carrotImage],
+                y: '-=20',
+                alpha: { from: 0, to: 1 },
+                ease: 'Power2',
+                duration: 1000,
+                yoyo: true,
+                repeat: 0
+            });
+    
+            // Award the carrots
+            this.awardCarrots(10);
+        }
         
         // Restart button
         this.gameState.restartButton = this.add.image(300, 430, 'button').setInteractive().setScale(0.05);
@@ -1839,6 +2103,30 @@ class GameScene extends Phaser.Scene {
         // Add text labels for the buttons
         this.add.text(300, 430, 'Restart', { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
     }
+
+awardCarrots(amount) {
+    fetch('/api/updateCarrots', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+            email: localStorage.getItem('userEmail'),
+            carrotsToAdd: amount 
+        }),
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log(`Carrots updated. New count: ${data.newCarrotCount}`);
+        } else {
+            console.error('Failed to update carrots:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Error updating carrots:', error);
+    });
+}
 
     spawnShieldPowerup() {
         if (this.gameState.shieldPowerup) {
@@ -1953,13 +2241,27 @@ class GameScene extends Phaser.Scene {
         this.gameState.playerScoreText.setText('Player Score: 0');
         this.gameState.botScoreText.setText('Bot Score: 0');
     
-        // Clear win message and buttons
-        if (this.gameState.winText) this.gameState.winText.destroy();
-        if (this.gameState.restartButton) this.gameState.restartButton.destroy();
-        if (this.gameState.returnMenuButton) this.gameState.returnMenuButton.destroy();
-        this.gameState.winText = null;
-        this.gameState.restartButton = null;
-        this.gameState.returnMenuButton = null;
+        // Clear all UI elements
+        if (this.gameState.winText) {
+            this.gameState.winText.destroy();
+            this.gameState.winText = null;
+        }
+        if (this.gameState.restartButton) {
+            this.gameState.restartButton.destroy();
+            this.gameState.restartButton = null;
+        }
+        if (this.gameState.returnMenuButton) {
+            this.gameState.returnMenuButton.destroy();
+            this.gameState.returnMenuButton = null;
+        }
+    
+        // Make sure to destroy any text associated with the buttons
+        this.children.getAll().forEach((child) => {
+            if (child instanceof Phaser.GameObjects.Text && 
+                (child.text === 'Restart' || child.text === 'Return to Menu')) {
+                child.destroy();
+            }
+        });
     
         // Reset player and bot states
         this.gameState.playerDead = false;
@@ -2007,6 +2309,10 @@ class GameScene extends Phaser.Scene {
         // Update the score display
         this.gameState.playerScoreText.setText('Player Score: 0');
         this.gameState.botScoreText.setText('Bot Score: 0');
+    
+        // Make sure all game objects are visible and enabled
+        this.gameState.player.setVisible(true);
+        this.gameState.bot.setVisible(true);
     }
 
     returnToMainMenu() {
@@ -2031,6 +2337,7 @@ class GameScene extends Phaser.Scene {
         
         // Switch to the MainMenu scene
         this.scene.start('MainMenu');
+        this.scene.get('MainMenu').events.emit('refreshCarrotCount');
     }
 
 
