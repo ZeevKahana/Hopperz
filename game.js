@@ -256,8 +256,7 @@ class LoginScene extends Phaser.Scene {
         super('LoginScene');
         this.music = null;
         this.musicReady = false;
-        this.debugText = null;
-        this.audioEnabled = true;
+        this.volumeSlider = null;
     }
 
     preload() {
@@ -289,34 +288,105 @@ class LoginScene extends Phaser.Scene {
             }
         });
 
-        this.createAudioToggle();
-
-        this.debugText = this.add.text(10, 40, 'Debug Info', { fontSize: '16px', fill: '#fff' });
-        this.updateDebugText();
+        this.createVolumeSlider();
 
         // Add listener for any click on the game
         this.input.on('pointerdown', () => this.handleUserInteraction());
     }
 
-    createAudioToggle() {
-        const toggleText = this.audioEnabled ? 'Disable Audio' : 'Enable Audio';
-        this.audioToggle = this.add.text(10, 10, toggleText, { 
-            fontSize: '18px', 
-            fill: '#fff', 
-            backgroundColor: '#333', 
-            padding: { x: 10, y: 5 } 
-        })
-        .setInteractive();
+    createVolumeSlider() {
+        const textX = 10;
+        const textY = 10;
+        const sliderX = textX + 1;
+        const sliderY = textY + 25;
+        const sliderWidth = 100;
 
-        this.audioToggle.on('pointerdown', () => {
-            this.toggleAudio();
+        // Fetch the user's volume setting
+        this.fetchVolumeSetting().then(volume => {
+            const volumeText = this.add.text(textX, textY, `Volume: ${volume}`, { fontSize: '16px', fill: '#000' });
+
+            const slider = this.add.rectangle(sliderX + sliderWidth / 2, sliderY, sliderWidth, 5, 0x000000);
+
+            const initialSliderX = sliderX + (volume / 100 * sliderWidth);
+            const sliderButton = this.add.circle(initialSliderX, sliderY, 8, 0xff0000)
+                .setInteractive()
+                .setDepth(1);
+
+            this.input.setDraggable(sliderButton);
+
+            this.input.on('drag', (pointer, gameObject, dragX) => {
+                dragX = Phaser.Math.Clamp(dragX, sliderX, sliderX + sliderWidth);
+                gameObject.x = dragX;
+                const newVolume = Math.round((dragX - sliderX) / sliderWidth * 100);
+                volumeText.setText(`Volume: ${newVolume}`);
+                this.sound.setVolume(newVolume / 100);
+                if (this.music) {
+                    this.music.setVolume(newVolume / 100);
+                }
+                this.saveVolumeSetting(newVolume);
+            });
+
+            this.volumeSlider = { text: volumeText, slider: slider, button: sliderButton };
+            this.sound.setVolume(volume / 100);
+            if (this.music) {
+                this.music.setVolume(volume / 100);
+            }
+        });
+    }
+
+    fetchVolumeSetting() {
+        const userEmail = localStorage.getItem('userEmail');
+        if (!userEmail) {
+            return Promise.resolve(50); // Default volume if no user is logged in
+        }
+
+        return fetch('/api/getVolume', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: userEmail }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                return data.volume;
+            } else {
+                console.error('Failed to fetch volume:', data.error);
+                return 50; // Default volume if fetch fails
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching volume:', error);
+            return 50; // Default volume if fetch fails
+        });
+    }
+
+    saveVolumeSetting(volume) {
+        const userEmail = localStorage.getItem('userEmail');
+        if (!userEmail) return; // Don't save if no user is logged in
+
+        fetch('/api/saveVolume', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: userEmail, volume: volume }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                console.error('Failed to save volume:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving volume:', error);
         });
     }
 
     setupMusic() {
         this.music = this.sound.add('loginSoundtrack', { loop: true, volume: 0.5 });
         this.musicReady = true;
-        this.updateDebugText("Music setup complete");
     }
 
     handleUserInteraction() {
@@ -324,34 +394,9 @@ class LoginScene extends Phaser.Scene {
     }
 
     tryPlayMusic() {
-        if (this.musicReady && this.audioEnabled && this.music && !this.music.isPlaying) {
+        if (this.musicReady && this.music && !this.music.isPlaying) {
             this.music.play();
-            this.updateDebugText("Music started playing");
-        } else if (!this.musicReady) {
-            this.updateDebugText("Music not ready yet");
-        } else if (!this.audioEnabled) {
-            this.updateDebugText("Audio is disabled");
-        } else if (this.music && this.music.isPlaying) {
-            this.updateDebugText("Music is already playing");
         }
-    }
-
-    stopMusic() {
-        if (this.music && this.music.isPlaying) {
-            this.music.stop();
-            this.updateDebugText("Music stopped");
-        }
-    }
-
-    toggleAudio() {
-        this.audioEnabled = !this.audioEnabled;
-        this.audioToggle.setText(this.audioEnabled ? 'Disable Audio' : 'Enable Audio');
-        if (this.audioEnabled) {
-            this.tryPlayMusic();
-        } else {
-            this.stopMusic();
-        }
-        this.updateDebugText(`Audio ${this.audioEnabled ? 'enabled' : 'disabled'}`);
     }
 
     updateDebugText(message) {
@@ -359,13 +404,10 @@ class LoginScene extends Phaser.Scene {
             this.debugText.setText([
                 `Music Ready: ${this.musicReady}`,
                 `Music Playing: ${this.music ? this.music.isPlaying : 'N/A'}`,
-                `Audio Enabled: ${this.audioEnabled}`,
                 `Last Action: ${message || 'None'}`
             ]);
         }
     }
-
-    
 
     login(email, password) {
         fetch('/api/login', {
@@ -380,6 +422,7 @@ class LoginScene extends Phaser.Scene {
             if (data.success) {
                 console.log('Login successful');
                 localStorage.setItem('userEmail', email);
+                this.stopMusic();
                 this.scene.start('MainMenu', { 
                     carrotCount: data.carrots, 
                     purchasedItems: data.purchasedItems 
@@ -447,7 +490,7 @@ class MainMenuScene extends Phaser.Scene {
         this.currentControlScheme = 'Arrows';
         this.startButton = null;
         this.optionsButton = null;
-        this.selectedMap = 'sky'; // Default selected map
+        this.selectedMap = 'desert'; // Default selected map
         this.mapSelectionActive = false;
         this.selectedColor = 'white'; // Default color
         this.colorButtons = [];
@@ -464,13 +507,14 @@ class MainMenuScene extends Phaser.Scene {
       this.load.audio('menuSoundtrack', 'assets/menu_soundtrack.mp3');
       this.load.image('optionsButton', 'assets/options-button.png');
       this.load.image('mapSelectButton', 'assets/map-select-button.png');
-      this.load.image('sky_preview', 'assets/sky_preview.png');
+      this.load.image('desert_preview', 'assets/desert_preview.png');
       this.load.image('city_preview', 'assets/city_preview.png');
       this.load.image('space_preview', 'assets/space_preview.png');
       this.load.image('white-standing', 'assets/rabbit/white/standing.png');
       this.load.image('yellow-standing', 'assets/rabbit/yellow/standing.png');
       this.load.image('grey-standing', 'assets/rabbit/grey/standing.png');
       this.load.image('blue-standing', 'assets/rabbit/blue/standing.png');
+      this.load.image('purple-standing', 'assets/rabbit/purple/standing.png');
       this.load.image('carrot', 'assets/carrot.png');
       this.load.image('shopIcon', 'assets/shop.png');
     }
@@ -563,7 +607,7 @@ class MainMenuScene extends Phaser.Scene {
   
     showMapSelection() {
         this.mapSelectionActive = true;
-        const maps = ['sky', 'city', 'space'];
+        const maps = ['desert', 'city', 'space'];
         this.mapButtons = [];
         
         const overlay = this.add.rectangle(400, 300, 800, 600, 0x000000, 0.7);
@@ -647,9 +691,10 @@ class MainMenuScene extends Phaser.Scene {
             fill: '#fff' 
         }).setOrigin(0.5);
     
+        // Regular colors
         const baseColors = ['white', 'yellow', 'grey'];
         baseColors.forEach((color, index) => {
-            const button = this.add.image(130 + index * 70, 250, `${color}-standing`)
+            const button = this.add.image(130 + index * 70, 200, `${color}-standing`)
                 .setScale(1)
                 .setInteractive();
     
@@ -660,18 +705,22 @@ class MainMenuScene extends Phaser.Scene {
             this.colorButtons.push(button);
         });
     
-        // Add blue color option if purchased
-        if (this.purchasedItems.has('blueRabbit')) {
-            const blueButton = this.add.image(130, 320, 'blue-standing')
+        // Purchased colors
+        const purchasedColors = [];
+        if (this.purchasedItems.has('blueRabbit')) purchasedColors.push('blue');
+        if (this.purchasedItems.has('purpleRabbit')) purchasedColors.push('purple');
+    
+        purchasedColors.forEach((color, index) => {
+            const button = this.add.image(130 + index * 70, 270, `${color}-standing`)
                 .setScale(1)
                 .setInteractive();
     
-            blueButton.on('pointerdown', () => this.selectColor('blue', blueButton));
-            blueButton.on('pointerover', () => blueButton.setScale(1.05));
-            blueButton.on('pointerout', () => blueButton.setScale(1));
+            button.on('pointerdown', () => this.selectColor(color, button));
+            button.on('pointerover', () => button.setScale(1.05));
+            button.on('pointerout', () => button.setScale(1));
     
-            this.colorButtons.push(blueButton);
-        }
+            this.colorButtons.push(button);
+        });
     
         // Difficulty selection
         const difficultyTitle = this.add.text(600, 150, 'Select difficulty', { 
@@ -777,28 +826,29 @@ class MainMenuScene extends Phaser.Scene {
         const title = this.add.text(400, 200, 'Options', { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
         optionsContainer.add(title);
     
-        const currentVolume = Math.round(this.sound.volume * 100);
+        this.fetchVolumeSetting().then(currentVolume => {
+            const volumeText = this.add.text(250, 250, `Volume: ${currentVolume}`, { fontSize: '24px', fill: '#fff' });
+            optionsContainer.add(volumeText);
     
-        const volumeText = this.add.text(250, 250, `Volume: ${currentVolume}`, { fontSize: '24px', fill: '#fff' });
-        optionsContainer.add(volumeText);
+            const slider = this.add.rectangle(400, 300, 200, 10, 0xffffff);
+            optionsContainer.add(slider);
     
-        const slider = this.add.rectangle(400, 300, 200, 10, 0xffffff);
-        optionsContainer.add(slider);
+            const initialSliderX = 300 + (currentVolume * 2);
+            const sliderButton = this.add.circle(initialSliderX, 300, 15, 0xff0000)
+                .setInteractive()
+                .setDepth(1);
+            optionsContainer.add(sliderButton);
     
-        const initialSliderX = 300 + (currentVolume * 2);
-        const sliderButton = this.add.circle(initialSliderX, 300, 15, 0xff0000)
-            .setInteractive()
-            .setDepth(1);
-        optionsContainer.add(sliderButton);
+            this.input.setDraggable(sliderButton);
     
-        this.input.setDraggable(sliderButton);
-    
-        this.input.on('drag', (pointer, gameObject, dragX) => {
-            dragX = Phaser.Math.Clamp(dragX, 300, 500);
-            gameObject.x = dragX;
-            const volume = Math.round((dragX - 300) / 2);
-            volumeText.setText(`Volume: ${volume}`);
-            this.sound.setVolume(volume / 100);
+            this.input.on('drag', (pointer, gameObject, dragX) => {
+                dragX = Phaser.Math.Clamp(dragX, 300, 500);
+                gameObject.x = dragX;
+                const volume = Math.round((dragX - 300) / 2);
+                volumeText.setText(`Volume: ${volume}`);
+                this.sound.setVolume(volume / 100);
+                this.saveVolumeSetting(volume);  // Save the volume setting
+            });
         });
     
         // Create an interactive text for control scheme selection
@@ -814,8 +864,12 @@ class MainMenuScene extends Phaser.Scene {
             this.changeControlScheme(controlText);
         });
     
-        const closeButton = this.add.text(550, 170, 'X', { fontSize: '24px', fill: '#fff' })
-            .setInteractive();
+        // Simple white 'X' close button
+        const closeButton = this.add.text(550, 170, 'X', { 
+            fontSize: '24px', 
+            fill: '#fff' 
+        })
+        .setInteractive();
         optionsContainer.add(closeButton);
     
         closeButton.on('pointerdown', () => {
@@ -823,6 +877,57 @@ class MainMenuScene extends Phaser.Scene {
             this.isOptionsOpen = false;
             this.startButton.setInteractive();
             this.optionsButton.setInteractive();
+        });
+    }
+    
+    // Make sure these methods are in your MainMenuScene
+    fetchVolumeSetting() {
+        const userEmail = localStorage.getItem('userEmail');
+        if (!userEmail) {
+            return Promise.resolve(50); // Default volume if no user is logged in
+        }
+    
+        return fetch('/api/getVolume', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: userEmail }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                return data.volume;
+            } else {
+                console.error('Failed to fetch volume:', data.error);
+                return 50; // Default volume if fetch fails
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching volume:', error);
+            return 50; // Default volume if fetch fails
+        });
+    }
+    
+    saveVolumeSetting(volume) {
+        const userEmail = localStorage.getItem('userEmail');
+        if (!userEmail) return; // Don't save if no user is logged in
+    
+        fetch('/api/saveVolume', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ email: userEmail, volume: volume }),
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) {
+                console.error('Failed to save volume:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error saving volume:', error);
         });
     }
 
@@ -884,35 +989,16 @@ class MainMenuScene extends Phaser.Scene {
         const title = this.add.text(0, -130, 'Shop', { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
         this.shopContainer.add(title);
     
-        // Add blue rabbit item
-        let blueRabbit;
-        if (this.textures.exists('blue-standing')) {
-            blueRabbit = this.add.image(-100, 0, 'blue-standing').setScale(1);
-        } else {
-            console.error('Blue rabbit image not found: blue-standing');
-            blueRabbit = this.add.rectangle(-100, 0, 50, 50, 0x0000FF); // Blue rectangle as fallback
-        }
-        this.shopContainer.add(blueRabbit);
+        // Define shop items
+        const shopItems = [
+            { color: 'blue', price: 100, x: -75 },
+            { color: 'purple', price: 150, x: 75 }
+        ];
     
-        if (this.purchasedItems.has('blueRabbit')) {
-            const soldText = this.add.text(-100, 70, 'SOLD!!!', { fontSize: '24px', fill: '#ff0000' }).setOrigin(0.5);
-            this.shopContainer.add(soldText);
-        } else {
-            // Add price with carrot icon
-            const priceText = this.add.text(-130, 70, '100', { fontSize: '24px', fill: '#fff' }).setOrigin(0.5);
-            this.shopContainer.add(priceText);
-    
-            const carrotIcon = this.add.image(-90, 70, 'carrot').setScale(0.4);
-            this.shopContainer.add(carrotIcon);
-    
-            const buyButton = this.add.text(-100, 110, 'Buy', { fontSize: '24px', fill: '#fff', backgroundColor: '#4a4' })
-                .setOrigin(0.5)
-                .setInteractive()
-                .setPadding(10);
-            this.shopContainer.add(buyButton);
-    
-            buyButton.on('pointerdown', () => this.purchaseItem('blueRabbit', 100));
-        }
+        // Add shop items
+        shopItems.forEach(item => {
+            this.addShopItem(item);
+        });
     
         // Add close button
         const closeButton = this.add.text(180, -130, 'X', { fontSize: '24px', fill: '#fff' })
@@ -920,6 +1006,40 @@ class MainMenuScene extends Phaser.Scene {
         this.shopContainer.add(closeButton);
     
         closeButton.on('pointerdown', () => this.closeShop());
+    
+        // Add placeholder for future scroll functionality
+        // This is where you would add logic to scroll and see more colors
+    }
+    
+    addShopItem(item) {
+        let rabbitImage;
+        if (this.textures.exists(`${item.color}-standing`)) {
+            rabbitImage = this.add.image(item.x, -20, `${item.color}-standing`).setScale(0.8);
+        } else {
+            console.error(`${item.color} rabbit image not found: ${item.color}-standing`);
+            rabbitImage = this.add.rectangle(item.x, -20, 40, 40, item.color === 'blue' ? 0x0000FF : 0x800080);
+        }
+        this.shopContainer.add(rabbitImage);
+    
+        if (this.purchasedItems.has(`${item.color}Rabbit`)) {
+            const soldText = this.add.text(item.x, 40, 'SOLD!', { fontSize: '20px', fill: '#ff0000' }).setOrigin(0.5);
+            this.shopContainer.add(soldText);
+        } else {
+            // Add price with carrot icon
+            const priceText = this.add.text(item.x - 30, 40, item.price.toString(), { fontSize: '24px', fill: '#fff' }).setOrigin(0.5);
+            this.shopContainer.add(priceText);
+    
+            const carrotIcon = this.add.image(item.x + 10, 40, 'carrot').setScale(0.3);
+            this.shopContainer.add(carrotIcon);
+    
+            const buyButton = this.add.text(item.x, 80, 'Buy', { fontSize: '20px', fill: '#fff', backgroundColor: '#4a4' })
+                .setOrigin(0.5)
+                .setInteractive()
+                .setPadding(5);
+            this.shopContainer.add(buyButton);
+    
+            buyButton.on('pointerdown', () => this.purchaseItem(`${item.color}Rabbit`, item.price));
+        }
     }
 
     closeShop() {
@@ -1014,8 +1134,8 @@ class GameScene extends Phaser.Scene {
     }
     
     preload() {
-        const colors = ['white', 'yellow', 'grey', 'blue'];
-        this.load.image('sky', 'assets/sky.png');
+        const colors = ['white', 'yellow', 'grey', 'blue', 'purple'];
+        this.load.image('desert', 'assets/desert.png');
         this.load.image('platform', 'assets/platform.png');
         this.load.image('cloud', 'assets/cloud.png');
         this.load.image('city', 'assets/city.png');
@@ -1024,8 +1144,6 @@ class GameScene extends Phaser.Scene {
         this.load.image('building2', 'assets/building2.png');
         this.load.image('building3', 'assets/building3.png');
         this.load.image('space-platform', 'assets/space-platform.png');
-        this.load.image('sky_preview', 'assets/sky_preview.png');
-        this.load.image('city_preview', 'assets/city_preview.png');
         colors.forEach(color => {
             this.load.image(`rabbit-standing-${color}`, `assets/rabbit/${color}/standing.png`);
             this.load.image(`rabbit-jumpingstraight-${color}`, `assets/rabbit/${color}/jumpingstraight.png`);
@@ -1048,8 +1166,8 @@ class GameScene extends Phaser.Scene {
     create() {
         this.sound.stopAll();
         
-        if (this.currentMap === 'sky') {
-            this.add.image(400, 300, 'sky');
+        if (this.currentMap === 'desert') {
+            this.add.image(400, 300, 'desert');
         } else if (this.currentMap === 'city') {
             this.add.image(400, 300, 'city');
         } else if (this.currentMap === 'space') {
@@ -1239,7 +1357,8 @@ class GameScene extends Phaser.Scene {
         const handleEntityOnPlatform = (entity) => {
             let onMovingPlatform = false;
             this.gameState.movingPlatforms.forEach(platform => {
-                if (entity.body.touching.down && entity.y <= platform.y) {
+                // Changed this condition to work for both top and bottom platforms
+                if (entity.body.touching.down && Math.abs(entity.y - platform.y) <= platform.height / 2 + entity.height / 2) {
                     onMovingPlatform = true;
                     const deltaX = platform.x - platform.previousX;
                     entity.x += deltaX;
@@ -1269,8 +1388,8 @@ class GameScene extends Phaser.Scene {
     createPlatforms() {
         this.gameState.platforms = this.physics.add.staticGroup();
 
-        if (this.currentMap === 'sky') {
-            this.createSkyPlatforms();
+        if (this.currentMap === 'desert') {
+            this.createDesertPlatforms();
         } else if (this.currentMap === 'city') {
             this.createCityPlatforms();
         } else if (this.currentMap === 'space') {
@@ -1278,7 +1397,7 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    createSkyPlatforms() {
+    createDesertPlatforms() {
         // Create bottom platform (full width)
         this.createPlatform(0, 600, 800, 64, 'platform');
 
@@ -1311,8 +1430,9 @@ class GameScene extends Phaser.Scene {
         const platformWidth = 200;
         const platformHeight = 32;
     
-        const leftmostPosition = 0;
-        const rightmostPosition = gameWidth - platformWidth;
+        // Adjust these values to keep platforms fully on screen
+        const leftmostPosition = platformWidth / 2;
+        const rightmostPosition = gameWidth - platformWidth / 2;
     
         // Create top platform (moving left to right)
         const topPlatform = this.gameState.platforms.create(leftmostPosition, gameHeight * 0.3, 'space-platform');
@@ -1527,28 +1647,42 @@ class GameScene extends Phaser.Scene {
         const gameHeight = this.sys.game.config.height;
         let x, y;
         let validPosition = false;
-
-        while (!validPosition) {
+        let attempts = 0;
+        const maxAttempts = 20; // Reduced number of attempts
+    
+        while (!validPosition && attempts < maxAttempts) {
             x = Phaser.Math.Between(50, gameWidth - 50);
-            y = Phaser.Math.Between(50, gameHeight - 50);
-
-            // For 'space' map, we don't need to check for platform collision
-            if (this.currentMap === 'space') {
-                validPosition = true;
-            } else {
-                validPosition = !this.isPositionInsidePlatform(x, y);
+            y = Phaser.Math.Between(50, gameHeight - 100); // Avoid spawning too close to the bottom
+    
+            // Check if the position is not inside any platform
+            validPosition = !this.isPositionInsidePlatform(x, y);
+    
+            // Additional check to ensure some space above the spawn point
+            if (validPosition) {
+                const headroom = this.physics.overlapRect(x, y - 50, 1, 50, false, true, this.gameState.platforms);
+                if (headroom.length > 0) {
+                    validPosition = false; // Not enough space above, try again
+                }
             }
+    
+            attempts++;
         }
-
+    
+        // If we couldn't find a valid position, use a semi-random elevated position
+        if (!validPosition) {
+            x = Phaser.Math.Between(50, gameWidth - 50);
+            y = Phaser.Math.Between(50, gameHeight / 2); // Upper half of the screen
+        }
+    
         return { x, y };
     }
-
+    
     isPositionInsidePlatform(x, y) {
         return this.gameState.platforms.children.entries.some(platform => {
-            return x >= platform.x && 
+            return x >= platform.x &&
                    x <= platform.x + platform.displayWidth &&
                    y >= platform.y - platform.displayHeight &&
-                   y <= platform.y;
+                   y <= platform.y + 5; // Small tolerance below the platform
         });
     }
 
@@ -2368,6 +2502,10 @@ window.onload = function() {
             antialias: true
         },
         backgroundColor: '#000000',
+        scale: {
+            mode: Phaser.Scale.NONE,
+            autoCenter: Phaser.Scale.CENTER_BOTH
+        },
         plugins: {
             scene: [
                 {

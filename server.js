@@ -20,7 +20,8 @@ const User = mongoose.model('User', {
     email: String,
     password: String,
     carrots: { type: Number, default: 0 },
-    purchasedItems: [String]  // Array to store IDs of purchased items
+    purchasedItems: [String], // Array to store IDs of purchased items
+    volume: { type: Number, default: 50 }  
 });
 
 // Routes
@@ -140,6 +141,38 @@ app.post('/api/purchaseItem', async (req, res) => {
         }
     } catch (error) {
         console.error('Purchase item error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/getVolume', async (req, res) => {
+    try {
+        const { email } = req.body;
+        const user = await User.findOne({ email });
+        if (user) {
+            res.json({ success: true, volume: user.volume || 50 });
+        } else {
+            res.status(404).json({ success: false, error: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Get volume error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.post('/api/saveVolume', async (req, res) => {
+    try {
+        const { email, volume } = req.body;
+        const user = await User.findOne({ email });
+        if (user) {
+            user.volume = volume;
+            await user.save();
+            res.json({ success: true });
+        } else {
+            res.status(404).json({ success: false, error: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Save volume error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
