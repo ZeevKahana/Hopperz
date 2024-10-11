@@ -44,7 +44,11 @@ game is now playable. still need to add: better cpu difficulty, 3 cpu + 1 player
 -fixed bugs
 
 
-10/10/24 ver 0.22
+10/10/24 - ver 0.22
 -ingame currency added connected to DB
 -shop added connected to DB
 -fixed bugs
+
+11/10/24 - ver 0.23
+-added volume slider to login screen that syncs with menu screen slider. volume settings are saved even after closing the game
+-fixed many bugs 
