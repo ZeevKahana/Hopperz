@@ -1,1 +1,10 @@
-Go to Terminal > cd "project directory" > browser-sync start --config bs-config.js
+Terminal > cd "project directory" > node server.js 
+
+
+
+
+
+
+
+                 /// old///
+browser-sync start --config bs-config.js // npx browser-sync start --server --files "*.html, *.js" --index "hopz.html"

@@ -1,27 +1,38 @@
-1. button to return to main menu after game ends.
-2. sound track (yoni recommended)
-3. Register/Login screens.
-4. Shield powerup
-5. Options button functional.
-6. CPU difficulty (easy/normal/hard)
-7. Implement rabbit sprite instead of dude.
-8. Make rabbit sprite different colors to choose from.
-9. make more bots on the screen (3 bots + 1 player)
-10. .exe file that starts the game up.
+1. button to return to main menu after game ends. DONE
+2. sound track (yoni recommended). DONE
+3. Register/Login screens. DONE
+4. Shield powerup. DONE
+5. Options button functional. DONE.
+6. .bat file that starts the game up. DONE
+7. Implement rabbit sprite instead of dude. DONE
+8. more maps. DONE
+9. Make rabbit different colors to choose from. DONE
+10. register/login connected to API. DONE
+11. store. DONE
+12. CPU difficulty (easy/normal/hard) (kinda done)
+13. make more bots on the screen (3 bots + 1 player)
+14. fix bugs.
 
 
 
-15. inverted controls options in the options menu (troll)
-
-
-18.Mode variations - after pressing start - give players match options to choose color, and game settings
+18.Mode variations - after pressing start - give players match options to choose color, and game settings, number of enemies
 (time, score)
 
 
 
-25. more maps.
+
 
 
 
 
 30. Online.
+
+
+powerup concepts:
+shield
+double jump,
+jump boost + speed boost,
+stun ball (1 second stun),
+x2 points for next kill,
+
+fake powerup???
