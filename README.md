@@ -52,3 +52,6 @@ game is now playable. still need to add: better cpu difficulty, 3 cpu + 1 player
 11/10/24 - ver 0.23
 -added volume slider to login screen that syncs with menu screen slider. volume settings are saved even after closing the game
 -fixed many bugs 
+
+13/10/24 - ver 0.24
+made a standalone version of the game. this introduced a lot of bugs that have mostly been fixed. still 2 bugs left to solve
