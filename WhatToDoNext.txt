@@ -36,3 +36,11 @@ stun ball (1 second stun),
 x2 points for next kill,
 
 fake powerup???
+
+
+bugs:
+
+1. jumping straight causes a bug
+2. when wrapping in space map gravity needs to be consistent and not reset.
+3. .exe file that starts the game.
+4. install file that installs the game in another computer

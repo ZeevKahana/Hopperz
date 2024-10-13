@@ -279,18 +279,28 @@ class LoginScene extends Phaser.Scene {
         const loginForm = this.add.dom(400, 300).createFromCache('loginform');
         loginForm.setVisible(true).setScale(1.35).setOrigin(0.5);  
 
+        // Pre-fill email if it exists in localStorage
+        const savedEmail = localStorage.getItem('userEmail');
+        if (savedEmail) {
+            loginForm.getChildByName('email').value = savedEmail;
+            loginForm.getChildByName('remember-me').checked = true;
+        }
+
         loginForm.addListener('click');
         loginForm.on('click', (event) => {
             if (event.target.name === 'loginButton') {
-                this.login(loginForm.getChildByName('email').value, loginForm.getChildByName('password').value);
+                const email = loginForm.getChildByName('email').value;
+                const password = loginForm.getChildByName('password').value;
+                const rememberMe = loginForm.getChildByName('remember-me').checked;
+                this.login(email, password, rememberMe);
             } else if (event.target.name === 'registerButton') {
-                this.register(loginForm.getChildByName('email').value, loginForm.getChildByName('password').value);
+                const email = loginForm.getChildByName('email').value;
+                const password = loginForm.getChildByName('password').value;
+                this.register(email, password);
             }
         });
 
         this.createVolumeSlider();
-
-        // Add listener for any click on the game
         this.input.on('pointerdown', () => this.handleUserInteraction());
     }
 
@@ -339,49 +349,35 @@ class LoginScene extends Phaser.Scene {
         if (!userEmail) {
             return Promise.resolve(50); // Default volume if no user is logged in
         }
-
-        return fetch('/api/getVolume', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email: userEmail }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                return data.volume;
-            } else {
-                console.error('Failed to fetch volume:', data.error);
+    
+        return window.electronAPI.getVolume(userEmail)
+            .then(data => {
+                if (data.success) {
+                    return data.volume;
+                } else {
+                    console.error('Failed to fetch volume:', data.error);
+                    return 50; // Default volume if fetch fails
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching volume:', error);
                 return 50; // Default volume if fetch fails
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching volume:', error);
-            return 50; // Default volume if fetch fails
-        });
+            });
     }
-
+    
     saveVolumeSetting(volume) {
         const userEmail = localStorage.getItem('userEmail');
         if (!userEmail) return; // Don't save if no user is logged in
-
-        fetch('/api/saveVolume', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email: userEmail, volume: volume }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (!data.success) {
-                console.error('Failed to save volume:', data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error saving volume:', error);
-        });
+    
+        window.electronAPI.saveVolume(userEmail, volume)
+            .then(data => {
+                if (!data.success) {
+                    console.error('Failed to save volume:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error saving volume:', error);
+            });
     }
 
     setupMusic() {
@@ -409,32 +405,38 @@ class LoginScene extends Phaser.Scene {
         }
     }
 
-    login(email, password) {
-        fetch('/api/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email, password }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                console.log('Login successful');
-                localStorage.setItem('userEmail', email);
-                this.stopMusic();
-                this.scene.start('MainMenu', { 
-                    carrotCount: data.carrots, 
-                    purchasedItems: data.purchasedItems 
-                });
-            } else {
-                alert('Invalid email or password.');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred during login.');
-        });
+    login(email, password, rememberMe) {
+        console.log('Attempting login with:', email);
+        if (!window.electronAPI || !window.electronAPI.login) {
+            console.error('Electron API or login method not available');
+            alert('Login functionality is not available');
+            return;
+        }
+    
+        window.electronAPI.login(email, password)
+            .then(data => {
+                console.log('Login response:', data);
+                if (data && data.success) {
+                    console.log('Login successful');
+                    if (rememberMe) {
+                        localStorage.setItem('userEmail', email);
+                    } else {
+                        localStorage.removeItem('userEmail');
+                    }
+                    this.stopMusic();
+                    console.log('Starting MainMenu with carrot count:', data.user.carrots);
+                    this.scene.start('MainMenu', { 
+                        carrotCount: data.user.carrots, 
+                        purchasedItems: data.user.purchasedItems 
+                    });
+                } else {
+                    alert('Invalid email or password.');
+                }
+            })
+            .catch(error => {
+                console.error('Login error:', error);
+                alert('An error occurred during login.');
+            });
     }
 
     stopMusic() {
@@ -445,37 +447,26 @@ class LoginScene extends Phaser.Scene {
     }
 
     register(email, password) {
-        const emailRegex = /\S+@\S+\.\S+/;
-        
-        if (!emailRegex.test(email)) {
-            alert('Invalid email format. Please use a valid email address.');
+        console.log('Attempting registration with:', email);
+        if (!window.electronAPI || !window.electronAPI.register) {
+            console.error('Electron API or register method not available');
+            alert('Registration functionality is not available');
             return;
         }
-
-        if (password.length < 6) {
-            alert('Password must be at least 6 characters long.');
-            return;
-        }
-
-        fetch('/api/register', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email, password }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                alert('Registration successful. You can now log in.');
-            } else {
-                alert('Registration failed. ' + (data.error || 'Please try again.'));
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('An error occurred during registration.');
-        });
+    
+        window.electronAPI.register(email, password)
+            .then(data => {
+                console.log('Registration response:', data);
+                if (data && data.success) {
+                    alert('Registration successful. You can now log in.');
+                } else {
+                    alert('Registration failed. ' + ((data && data.error) || 'Please try again.'));
+                }
+            })
+            .catch(error => {
+                console.error('Registration error:', error);
+                alert('An error occurred during registration.');
+            });
     }
 }
 
@@ -490,12 +481,15 @@ class MainMenuScene extends Phaser.Scene {
         this.currentControlScheme = 'Arrows';
         this.startButton = null;
         this.optionsButton = null;
-        this.selectedMap = 'desert'; // Default selected map
+        this.selectedMap = 'desert'; 
         this.mapSelectionActive = false;
-        this.selectedColor = 'white'; // Default color
+        this.selectedColor = null; 
+        this.selectedDifficulty = null; 
+        this.startGameButton = null; 
         this.colorButtons = [];
         this.mainMenuElements = [];
         this.selectionScreenElements = [];
+        this.selectionScreenActive = false;
         this.carrotCount = 0;
         this.isShopOpen = false;
         this.purchasedItems = new Set();
@@ -571,40 +565,118 @@ class MainMenuScene extends Phaser.Scene {
     
         // Check for initial data passed from login
         const initData = this.scene.settings.data;
-        if (initData) {
-            if (initData.carrotCount !== undefined) {
-                this.carrotCount = initData.carrotCount;
-                this.carrotText.setText(`${this.carrotCount}`);
-            }
-            if (initData.purchasedItems) {
-                this.purchasedItems = new Set(initData.purchasedItems);
-            }
+    console.log('Received init data:', initData);
+    if (initData) {
+        if (initData.carrotCount !== undefined) {
+            this.carrotCount = initData.carrotCount;
+            this.carrotText.setText(`${this.carrotCount}`);
+            console.log('Set carrot count to:', this.carrotCount);
         } else {
-            // If no initial data, fetch from server
-            this.fetchCarrotCount();
+            console.log('No carrot count in init data');
         }
-    
-        // Menu soundtrack
-        this.menuSoundtrack = this.sound.add('menuSoundtrack', { loop: true });
-        this.playMenuSoundtrack();
-    
-        // Event listener for refreshing carrot count
-        this.events.on('refreshCarrotCount', this.fetchCarrotCount, this);
-    
-        // Store main menu elements
-        this.mainMenuElements = [this.startButton, this.shopButton, this.optionsButton, this.mapSelectButton, this.mapText];
+        if (initData.purchasedItems) {
+            this.purchasedItems = new Set(initData.purchasedItems);
+            console.log('Set purchased items:', this.purchasedItems);
+        } else {
+            console.log('No purchased items in init data');
+        }
+    } else {
+        console.log('No init data, fetching carrot count');
+        this.fetchCarrotCount();
     }
 
-    
+    // Menu soundtrack
+    this.menuSoundtrack = this.sound.add('menuSoundtrack', { loop: true });
+    this.playMenuSoundtrack();
+
+    // Event listener for refreshing carrot count
+    this.events.on('refreshCarrotCount', this.fetchCarrotCount, this);
+
+    // Store main menu elements
+    this.mainMenuElements = [this.startButton, this.shopButton, this.optionsButton, this.mapSelectButton, this.mapText];
+
+    //method to be called when returning from a game
+    this.events.on('wake', this.onWakeFromGame, this);
+
+    this.loadVolumeSetting();
+
+    // Check if we're coming back from a game and need to reset color selection
+    if (this.scene.settings.data && this.scene.settings.data.lastSelectedColor) {
+        this.selectedColor = this.scene.settings.data.lastSelectedColor;
+        localStorage.setItem('selectedRabbitColor', this.selectedColor);
+        console.log(`Color set from previous game: ${this.selectedColor}`);
+    }
+}
+
+onWakeFromGame(sys, data) {
+    console.log('Waking MainMenuScene, data:', data);
+    if (data && data.fromGame) {
+        this.resetGameSettings();
+        this.showMainMenu();  // Make sure this method exists and shows the main menu
+        console.log('Game settings reset after returning from game');
+    }
+}
+
+
+    loadVolumeSetting() {
+    const userEmail = localStorage.getItem('userEmail');
+    if (userEmail) {
+        window.electronAPI.getVolume(userEmail)
+            .then(data => {
+                if (data.success) {
+                    const volume = data.volume;
+                    this.sound.setVolume(volume / 100);
+                    if (this.menuSoundtrack) {
+                        this.menuSoundtrack.setVolume(volume / 100);
+                    }
+                } else {
+                    console.error('Failed to fetch volume:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching volume:', error);
+            });
+    }
+    }
+
+    startGame() {
+        if (this.selectedColor && this.selectedDifficulty) {
+            console.log(`Starting new game from MainMenu with color: ${this.selectedColor}, difficulty: ${this.selectedDifficulty}, map: ${this.selectedMap}`);
+            
+            // Start the GameScene with the selected parameters
+            const gameScene = this.scene.get('GameScene');
+            if (gameScene) {
+                gameScene.changePlayerColor(this.selectedColor);
+            }
+            
+            this.scene.start('GameScene', { 
+                difficulty: this.selectedDifficulty, 
+                map: this.selectedMap,
+                rabbitColor: this.selectedColor 
+            });
+        } else {
+            console.log('Cannot start game: color or difficulty not selected');
+        }
+    }  
 
     selectColor(color, selectedButton) {
+        console.log(`Color selected in MainMenu: ${color}`);
         this.selectedColor = color;
+        localStorage.setItem('selectedRabbitColor', color);
+        console.log(`Color stored in localStorage: ${localStorage.getItem('selectedRabbitColor')}`);
         this.colorButtons.forEach(button => {
             button.setTint(button === selectedButton ? 0xffff00 : 0xffffff);
         });
-        this.checkStartGame();
+        this.updateStartButton();
     }
+    
   
+    showMainMenu() {
+        console.log('Showing main menu');
+        this.mainMenuElements.forEach(element => element.setVisible(true));
+        this.selectionScreenActive = false;
+    }
+
     showMapSelection() {
         this.mapSelectionActive = true;
         const maps = ['desert', 'city', 'space'];
@@ -667,14 +739,23 @@ class MainMenuScene extends Phaser.Scene {
     }
   
     selectMap(map) {
+        
       this.selectedMap = map;
       this.mapText.setText(`Selected Map: ${this.selectedMap}`);
       this.hideMapSelection();
     }
 
     showSelectionScreen() {
+        console.log('Showing selection screen');
+        // Clear existing selection screen elements if any
+        this.hideSelectionScreen();
         // Hide main menu elements
         this.mainMenuElements.forEach(element => element.setVisible(false));
+        this.selectionScreenActive = true;
+        this.selectedColor = null;
+        this.selectedDifficulty = null;
+    
+        
     
         // Add black background
         const background = this.add.rectangle(400, 300, 800, 600, 0x000000);
@@ -744,33 +825,58 @@ class MainMenuScene extends Phaser.Scene {
             this.difficultyButtons.push(button);
         });
     
-        // Back button
-        const backButton = this.add.text(400, 500, 'Back', { 
-            fontSize: '24px', 
-            fill: '#fff',
-            backgroundColor: '#000',
-            padding: { x: 15, y: 8 }
+        // Add start game button
+        this.startGameButton = this.add.text(400, 500, 'Start Game', { 
+            fontSize: '28px', 
+            fill: '#888',
+            backgroundColor: '#333',
+            padding: { x: 20, y: 10 }
         }).setOrigin(0.5).setInteractive();
     
-        backButton.on('pointerdown', () => this.hideSelectionScreen());
-        backButton.on('pointerover', () => backButton.setStyle({ fill: '#ff0' }));
-        backButton.on('pointerout', () => backButton.setStyle({ fill: '#fff' }));
+        this.startGameButton.on('pointerdown', () => {
+            if (this.selectedColor && this.selectedDifficulty) {
+                this.startGame();
+            }
+        });
     
+        this.updateStartButton();
+    
+        // 'X' button to close selection screen
+        const closeButton = this.add.text(750, 50, 'X', { 
+            fontSize: '32px', 
+            fill: '#fff',
+            backgroundColor: '#000',
+            padding: { x: 10, y: 5 }
+        })
+        .setOrigin(0.5)
+        .setInteractive();
+
+        closeButton.on('pointerdown', () => this.hideSelectionScreen());
+        closeButton.on('pointerover', () => closeButton.setStyle({ fill: '#ff0' }));
+        closeButton.on('pointerout', () => closeButton.setStyle({ fill: '#fff' }));
+
         // Store selection screen elements
         this.selectionScreenElements = [
-            background, title, colorTitle, difficultyTitle, backButton,
-            ...this.colorButtons, ...this.difficultyButtons
+            background, title, colorTitle, difficultyTitle, closeButton,
+            ...this.colorButtons, ...this.difficultyButtons, this.startGameButton
         ];
     }
 
     selectDifficulty(difficulty, selectedButton) {
         this.selectedDifficulty = difficulty;
         this.difficultyButtons.forEach(button => {
-            if (button instanceof Phaser.GameObjects.Text && button.text !== 'Back') {
-                button.setStyle({ backgroundColor: button === selectedButton ? '#ff0' : '#333' });
-            }
+            button.setStyle({ backgroundColor: button === selectedButton ? '#ff0' : '#333' });
         });
-        this.checkStartGame();
+        this.updateStartButton();
+    }
+
+    updateStartButton() {
+        if (this.startGameButton) {
+            const canStart = this.selectedColor && this.selectedDifficulty;
+            this.startGameButton.setFill(canStart ? '#fff' : '#888');
+            this.startGameButton.setBackgroundColor(canStart ? '#4a4' : '#333');
+            console.log(`Start button updated. Can start: ${canStart}`);
+        }
     }
 
     checkStartGame() {
@@ -780,14 +886,29 @@ class MainMenuScene extends Phaser.Scene {
     }
 
     hideSelectionScreen() {
-        // Hide selection screen elements
-        this.selectionScreenElements.forEach(element => element.destroy());
-        this.selectionScreenElements = [];
+        console.log('Hiding selection screen');
+        this.selectionScreenActive = false;
+
+        // Destroy all selection screen elements
+        if (this.selectionScreenElements) {
+            this.selectionScreenElements.forEach(element => {
+                if (element && element.destroy) {
+                    element.destroy();
+                }
+            });
+        }
+
         this.colorButtons = [];
         this.difficultyButtons = [];
+        this.startGameButton = null;
+        this.selectionScreenElements = [];
 
-        // Show main menu elements
-        this.mainMenuElements.forEach(element => element.setVisible(true));
+        // Reset selections
+        this.selectedColor = null;
+        this.selectedDifficulty = null;
+
+        // Show main menu
+        this.showMainMenu();
     }
 
     playMenuSoundtrack() {
@@ -803,12 +924,70 @@ class MainMenuScene extends Phaser.Scene {
     }
 
     startGame(difficulty) {
-        this.stopMenuSoundtrack();
-        this.scene.start('GameScene', { 
-            difficulty: difficulty, 
-            map: this.selectedMap,
-            rabbitColor: this.selectedColor 
-        });
+        if (this.selectedColor && this.selectedDifficulty) {
+            this.scene.start('GameScene', { 
+                difficulty: this.selectedDifficulty, 
+                map: this.selectedMap,
+                rabbitColor: this.selectedColor 
+            });
+        }
+    }
+
+    resetGameSettings() {
+        console.log('Starting to reset game settings');
+    
+        // Reset selections
+        this.selectedColor = null;
+        this.selectedDifficulty = null;
+        console.log(`Selections reset - Color: ${this.selectedColor}, Difficulty: ${this.selectedDifficulty}`);
+    
+        if (this.selectionScreenActive) {
+            console.log('Selection screen is active, resetting UI elements');
+    
+            // Reset color buttons
+            this.colorButtons.forEach((button, index) => {
+                if (button && button.setTint) {
+                    button.setTint(0xffffff);
+                    console.log(`Reset color button ${index} to white`);
+                } else {
+                    console.log(`Unable to reset color button ${index}`);
+                }
+            });
+    
+            // Reset difficulty buttons
+            this.difficultyButtons.forEach((button, index) => {
+                if (button && button.setStyle) {
+                    button.setStyle({ backgroundColor: '#333' });
+                    console.log(`Reset difficulty button ${index} to default style`);
+                } else {
+                    console.log(`Unable to reset difficulty button ${index}`);
+                }
+            });
+    
+            // Reset start game button
+            if (this.startGameButton && this.startGameButton.setFill && this.startGameButton.setBackgroundColor) {
+                this.startGameButton.setFill('#888');
+                this.startGameButton.setBackgroundColor('#333');
+                console.log('Reset start game button to inactive state');
+            } else {
+                console.log('Unable to reset start game button');
+            }
+        } else {
+            console.log('Selection screen is not active, skipping UI reset');
+        }
+    
+        // Additional resets if needed
+        // For example, resetting the map selection:
+        // this.selectedMap = 'default_map';
+        // console.log(`Map selection reset to: ${this.selectedMap}`);
+    
+        // Verify final state
+        console.log('Final state after reset:');
+        console.log(`- Selected Color: ${this.selectedColor}`);
+        console.log(`- Selected Difficulty: ${this.selectedDifficulty}`);
+        console.log(`- Selection Screen Active: ${this.selectionScreenActive}`);
+    
+        console.log('Game settings reset complete');
     }
 
     showOptionsPage() {
@@ -829,25 +1008,28 @@ class MainMenuScene extends Phaser.Scene {
         this.fetchVolumeSetting().then(currentVolume => {
             const volumeText = this.add.text(250, 250, `Volume: ${currentVolume}`, { fontSize: '24px', fill: '#fff' });
             optionsContainer.add(volumeText);
-    
+
             const slider = this.add.rectangle(400, 300, 200, 10, 0xffffff);
             optionsContainer.add(slider);
-    
+
             const initialSliderX = 300 + (currentVolume * 2);
             const sliderButton = this.add.circle(initialSliderX, 300, 15, 0xff0000)
                 .setInteractive()
                 .setDepth(1);
             optionsContainer.add(sliderButton);
-    
+
             this.input.setDraggable(sliderButton);
-    
+
             this.input.on('drag', (pointer, gameObject, dragX) => {
                 dragX = Phaser.Math.Clamp(dragX, 300, 500);
                 gameObject.x = dragX;
                 const volume = Math.round((dragX - 300) / 2);
                 volumeText.setText(`Volume: ${volume}`);
                 this.sound.setVolume(volume / 100);
-                this.saveVolumeSetting(volume);  // Save the volume setting
+                if (this.menuSoundtrack) {
+                    this.menuSoundtrack.setVolume(volume / 100);
+                }
+                this.saveVolumeSetting(volume);
             });
         });
     
@@ -887,48 +1069,34 @@ class MainMenuScene extends Phaser.Scene {
             return Promise.resolve(50); // Default volume if no user is logged in
         }
     
-        return fetch('/api/getVolume', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email: userEmail }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                return data.volume;
-            } else {
-                console.error('Failed to fetch volume:', data.error);
+        return window.electronAPI.getVolume(userEmail)
+            .then(data => {
+                if (data.success) {
+                    return data.volume;
+                } else {
+                    console.error('Failed to fetch volume:', data.error);
+                    return 50; // Default volume if fetch fails
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching volume:', error);
                 return 50; // Default volume if fetch fails
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching volume:', error);
-            return 50; // Default volume if fetch fails
-        });
+            });
     }
     
     saveVolumeSetting(volume) {
         const userEmail = localStorage.getItem('userEmail');
         if (!userEmail) return; // Don't save if no user is logged in
     
-        fetch('/api/saveVolume', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ email: userEmail, volume: volume }),
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (!data.success) {
-                console.error('Failed to save volume:', data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error saving volume:', error);
-        });
+        window.electronAPI.saveVolume(userEmail, volume)
+            .then(data => {
+                if (!data.success) {
+                    console.error('Failed to save volume:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error saving volume:', error);
+            });
     }
 
     changeControlScheme(controlText) {
@@ -943,28 +1111,28 @@ class MainMenuScene extends Phaser.Scene {
     fetchCarrotCount() {
         const userEmail = localStorage.getItem('userEmail');
         if (userEmail) {
-            fetch('/api/getCarrotCount', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ email: userEmail }),
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    this.carrotCount = data.carrotCount;
-                    this.carrotText.setText(`${this.carrotCount}`);
-                    if (data.purchasedItems) {
-                        this.purchasedItems = new Set(data.purchasedItems);
+            if (!window.electronAPI || !window.electronAPI.getCarrotCount) {
+                console.error('Electron API or getCarrotCount method not available');
+                return;
+            }
+    
+            console.log('Fetching carrot count for:', userEmail);
+            window.electronAPI.getCarrotCount(userEmail)
+                .then(data => {
+                    console.log('Carrot count response:', data);
+                    if (data && data.success) {
+                        this.carrotCount = data.carrotCount;
+                        this.carrotText.setText(`${this.carrotCount}`);
+                        if (data.purchasedItems) {
+                            this.purchasedItems = new Set(data.purchasedItems);
+                        }
+                    } else {
+                        console.error('Failed to fetch carrot count:', data ? data.error : 'Unknown error');
                     }
-                } else {
-                    console.error('Failed to fetch carrot count:', data.error);
-                }
-            })
-            .catch(error => {
-                console.error('Error fetching carrot count:', error);
-            });
+                })
+                .catch(error => {
+                    console.error('Error fetching carrot count:', error);
+                });
         }
     }
     toggleShop() {
@@ -1051,19 +1219,7 @@ class MainMenuScene extends Phaser.Scene {
     }
 
     purchaseItem(itemId, price) {
-        if (this.carrotCount >= price) {
-            fetch('/api/purchaseItem', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    email: localStorage.getItem('userEmail'),
-                    itemId: itemId,
-                    price: price
-                }),
-            })
-            .then(response => response.json())
+        window.electronAPI.purchaseItem(localStorage.getItem('userEmail'), itemId, price)
             .then(data => {
                 if (data.success) {
                     this.carrotCount = data.newCarrotCount;
@@ -1080,10 +1236,8 @@ class MainMenuScene extends Phaser.Scene {
                 console.error('Error:', error);
                 alert('An error occurred during purchase.');
             });
-        } else {
-            alert('Not enough carrots!');
-        }
     }
+    
 }
 
 class GameScene extends Phaser.Scene {
@@ -1096,40 +1250,49 @@ class GameScene extends Phaser.Scene {
     }
 
     init(data) {
-        if (data && data.difficulty) {
-            this.cpuDifficulty = data.difficulty;
-        }
-        this.currentMap = data.map || 'sky'; 
-        this.rabbitColor = data.rabbitColor || 'white';
-        this.botColor = this.playerColor === 'white' ? 'yellow' : (this.playerColor === 'yellow' ? 'grey' : 'white');
+        console.log('GameScene init with data:', data);
+        this.cpuDifficulty = data.difficulty || 'normal';
+        this.currentMap = data.map || 'sky';
+    
+        // Prioritize the color passed from MainMenuScene
+        this.rabbitColor = data.rabbitColor || localStorage.getItem('selectedRabbitColor') || 'white';
+    
+        console.log(`Initializing GameScene with rabbit color: ${this.rabbitColor}`);
+        console.log(`Color from localStorage: ${localStorage.getItem('selectedRabbitColor')}`);
+    
+        this.botColor = this.rabbitColor === 'white' ? 'yellow' : (this.rabbitColor === 'yellow' ? 'grey' : 'white');
+
+        // Ensure the color is set in localStorage
+        localStorage.setItem('selectedRabbitColor', this.rabbitColor);
+
         this.gameState = {
-            player: null,
-            bot: null,
-            platforms: null,
-            cursors: null,
-            playerScoreText: null,
-            botScoreText: null,
-            timerText: null,
-            timerEvent: null,
-            winText: null,
-            restartButton: null,
-            playerHead: null,
-            botHead: null,
-            playerFeet: null,
-            botFeet: null,
-            playerDead: false,
-            botDead: false,
-            playerScore: 0,
-            botScore: 0,
-            lastCollisionTime: 0,
-            invulnerableUntil: 0,
-            botMoveEvent: null,
-            gameSoundtrack: null,
-            afterGameSoundtrack: null,
-            shieldPowerup: null,
-            shieldTimer: null,
-            playerShielded: false,
-            botShielded: false
+        player: null,
+        bot: null,
+        platforms: null,
+        cursors: null,
+        playerScoreText: null,
+        botScoreText: null,
+        timerText: null,
+        timerEvent: null,
+        winText: null,
+        restartButton: null,
+        playerHead: null,
+        botHead: null,
+        playerFeet: null,
+        botFeet: null,
+        playerDead: false,
+        botDead: false,
+        playerScore: 0,
+        botScore: 0,
+        lastCollisionTime: 0,
+        invulnerableUntil: 0,
+        botMoveEvent: null,
+        gameSoundtrack: null,
+        afterGameSoundtrack: null,
+        shieldPowerup: null,
+        shieldTimer: null,
+        playerShielded: false,
+        botShielded: false
         };
     }
     
@@ -1164,8 +1327,10 @@ class GameScene extends Phaser.Scene {
     }
 
     create() {
+        console.log('Creating game elements with rabbit color:', this.rabbitColor);
         this.sound.stopAll();
-        
+    
+        // Set up background based on the current map
         if (this.currentMap === 'desert') {
             this.add.image(400, 300, 'desert');
         } else if (this.currentMap === 'city') {
@@ -1173,37 +1338,38 @@ class GameScene extends Phaser.Scene {
         } else if (this.currentMap === 'space') {
             this.add.image(400, 300, 'space');
         }
-        
+    
         this.createPlatforms();
         this.createPlayer();
+        this.createAnimations();
         this.createBot();
         this.createUI();
-        
+        this.updatePlayerColor(this.rabbitColor);
+    
         if (this.currentMap === 'sky') {
             this.createCloud();
         }
-
+    
         if (this.currentMap === 'space') {
             this.physics.world.setBounds(0, 0, this.sys.game.config.width, Infinity);
         }
         
         this.physics.add.collider(this.gameState.player, this.gameState.platforms);
         this.physics.add.collider(this.gameState.bot, this.gameState.platforms);
-
+    
         if (this.currentMap === 'space') {
             this.physics.add.collider(this.gameState.player, this.gameState.movingPlatforms);
             this.physics.add.collider(this.gameState.bot, this.gameState.movingPlatforms);
         }
+    
         this.collisionManager = new CollisionManager(this);
         this.collisionManager.setupColliders();
         this.botAI = new BotAI(this, this.gameState.bot, this.gameState.player);
+        
         this.lastTime = 0;
-        this.gameState.player.setSize(this.gameState.player.width * 0.8, this.gameState.player.height);
-        this.gameState.player.setOffset(this.gameState.player.width * 0.1, 0);
-
-
+    
         console.log("Raycaster plugin:", this.raycasterPlugin);
-
+    
         if (this.gameState.botMoveEvent) {
             this.gameState.botMoveEvent.remove();
         }
@@ -1213,7 +1379,7 @@ class GameScene extends Phaser.Scene {
             this.ray = this.raycaster.createRay();
             console.log("Raycaster created:", this.raycaster);
             console.log("Ray created:", this.ray);
-
+    
             // Add platforms to raycaster
             this.gameState.platforms.children.entries.forEach(platform => {
                 this.raycaster.mapGameObjects(platform, false);
@@ -1221,9 +1387,7 @@ class GameScene extends Phaser.Scene {
         } else {
             console.error("Raycaster plugin not found!");
         }
-        // Apply the same adjustment to the bot
-        this.gameState.bot.setSize(this.gameState.bot.width * 0.8, this.gameState.bot.height);
-        this.gameState.bot.setOffset(this.gameState.bot.width * 0.1, 0);
+    
         this.gameState.timerEvent = this.time.addEvent({ delay: CONSTANTS.GAME_DURATION, callback: this.onTimerEnd, callbackScope: this });
         this.gameState.gameSoundtrack = this.sound.add('gameSoundtrack', { loop: true });
         this.gameState.gameSoundtrack.play();
@@ -1234,7 +1398,7 @@ class GameScene extends Phaser.Scene {
             callbackScope: this,
             loop: true
         });
-
+    
         this.anims.create({
             key: 'botLeft',
             frames: [
@@ -1247,7 +1411,7 @@ class GameScene extends Phaser.Scene {
             frameRate: 10,
             repeat: -1
         });
-
+    
         this.anims.create({
             key: 'botRight',
             frames: [
@@ -1260,10 +1424,15 @@ class GameScene extends Phaser.Scene {
             frameRate: 10,
             repeat: -1
         });
+    
+        this.loadVolumeSetting();
+    
+        // Initialize debug graphics
+        this.debugGraphics = this.add.graphics();
     }
 
     update(time, delta) {
-        if (!this.gameState.winText) { 
+        if (!this.gameState.winText) {
             this.handlePlayerMovement();
             this.updateBotAnimation();
             this.updateHitboxes();
@@ -1282,33 +1451,43 @@ class GameScene extends Phaser.Scene {
             }
     
             // Keep player within screen boundaries
-            this.gameState.player.x = Phaser.Math.Clamp(this.gameState.player.x, 
-                this.gameState.player.width / 2, 
+            this.gameState.player.x = Phaser.Math.Clamp(this.gameState.player.x,
+                this.gameState.player.width / 2,
                 this.sys.game.config.width - this.gameState.player.width / 2);
     
             // Keep bot within screen boundaries
-            this.gameState.bot.x = Phaser.Math.Clamp(this.gameState.bot.x, 
-                this.gameState.bot.width / 2, 
+            this.gameState.bot.x = Phaser.Math.Clamp(this.gameState.bot.x,
+                this.gameState.bot.width / 2,
                 this.sys.game.config.width - this.gameState.bot.width / 2);
+    
+            // Check if the player's texture matches the current rabbit color
+            const currentTexture = this.gameState.player.texture.key;
+            const expectedTexture = `rabbit-standing-${this.rabbitColor}`;
+            if (currentTexture !== expectedTexture && !this.gameState.player.anims.isPlaying) {
+                console.log(`Mismatch detected. Current: ${currentTexture}, Expected: ${expectedTexture}`);
+                this.updatePlayerColor(this.rabbitColor);
+            }
         }
-
+    
         if (this.currentMap === 'space') {
             this.wrapEntities();
             this.handleMovingPlatforms();
         }
-
+    
         if (!this.gameState.botDead) {
             this.botDecision(delta);
         }
-
+    
         if (!this.gameState.botDead && !this.gameState.winText) {
             const actualDelta = this.lastTime === 0 ? delta : time - this.lastTime;
             this.botAI.update(actualDelta);
             this.lastTime = time;
         }
+    
         if (this.gameState.playerShielded && this.gameState.playerShieldSprite) {
             this.gameState.playerShieldSprite.setPosition(this.gameState.player.x, this.gameState.player.y);
         }
+    
         if (this.gameState.botShielded && this.gameState.botShieldSprite) {
             this.gameState.botShieldSprite.setPosition(this.gameState.bot.x, this.gameState.bot.y);
         }
@@ -1334,6 +1513,73 @@ class GameScene extends Phaser.Scene {
                 console.log('Player is overlapping with shield');
             }
         }
+    
+    }
+
+    updatePlayerColor(newColor) {
+        console.log(`Updating player color to: ${newColor}`);
+        this.rabbitColor = newColor;
+        localStorage.setItem('selectedRabbitColor', newColor);
+        
+        if (this.gameState.player) {
+            // Store current position, velocity, and body configuration
+            const currentX = this.gameState.player.x;
+            const currentY = this.gameState.player.y;
+            const currentVelocityX = this.gameState.player.body.velocity.x;
+            const currentVelocityY = this.gameState.player.body.velocity.y;
+            const currentBodyConfig = {
+                width: this.gameState.player.body.width,
+                height: this.gameState.player.body.height,
+                offsetX: this.gameState.player.body.offset.x,
+                offsetY: this.gameState.player.body.offset.y
+            };
+    
+            // Remove existing animations
+            this.anims.remove('left');
+            this.anims.remove('right');
+            this.anims.remove('idle');
+    
+            // Recreate all animations for the new color
+            this.createAnimations();
+    
+            // Update the current texture based on the player's state
+            const onGround = this.gameState.player.body.touching.down;
+            const isMovingLeft = currentVelocityX < 0;
+            const isMovingRight = currentVelocityX > 0;
+    
+            if (onGround) {
+                if (isMovingLeft) {
+                    this.gameState.player.play('left', true);
+                } else if (isMovingRight) {
+                    this.gameState.player.play('right', true);
+                } else {
+                    this.gameState.player.play('idle', true);
+                }
+            } else {
+                if (isMovingLeft) {
+                    this.gameState.player.setTexture(`rabbit-jumpingleft-${newColor}`);
+                } else if (isMovingRight) {
+                    this.gameState.player.setTexture(`rabbit-jumpingright-${newColor}`);
+                } else {
+                    this.gameState.player.setTexture(`rabbit-jumpingstraight-${newColor}`);
+                }
+            }
+    
+            // Reapply position, velocity, and body configuration
+            this.gameState.player.setPosition(currentX, currentY);
+            this.gameState.player.setVelocity(currentVelocityX, currentVelocityY);
+            this.gameState.player.body.setSize(currentBodyConfig.width, currentBodyConfig.height);
+            this.gameState.player.body.setOffset(currentBodyConfig.offsetX, currentBodyConfig.offsetY);
+    
+            console.log(`Current player texture key: ${this.gameState.player.texture.key}`);
+        }
+    }
+
+    changePlayerColor(newColor) {
+        console.log(`Changing player color to: ${newColor}`);
+        this.rabbitColor = newColor;
+        localStorage.setItem('selectedRabbitColor', newColor);
+        this.updatePlayerColor(newColor);
     }
 
     wrapEntities() {
@@ -1514,19 +1760,32 @@ class GameScene extends Phaser.Scene {
 
     createPlayer() {
         const spawnPoint = this.getRandomSpawnPoint();
-        
-        // Check if the standing image exists
+        console.log(`Creating player with color: ${this.rabbitColor}`);
+
         if (!this.textures.exists(`rabbit-standing-${this.rabbitColor}`)) {
-            console.error(`Standing image not found for color: ${this.rabbitColor}`);
-            // Fallback to white if the selected color's image is missing
-            this.rabbitColor = 'white';
+        console.error(`Standing image not found for color: ${this.rabbitColor}`);
+        this.rabbitColor = 'white'; // Fallback to white if the texture doesn't exist
         }
-    
+
         this.gameState.player = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, `rabbit-standing-${this.rabbitColor}`)
-            .setBounce(0.1)
-            .setCollideWorldBounds(true);
+        .setBounce(0.1)
+        .setCollideWorldBounds(true);
+
+        console.log(`Player created with texture: rabbit-standing-${this.rabbitColor}`);
         this.gameState.player.setCollideWorldBounds(true);
         this.gameState.player.body.onWorldBounds = true;
+
+        // Adjust the physics body
+        const bodyWidth = this.gameState.player.width * 0.8;
+        const bodyHeight = this.gameState.player.height * 0.9; // Slightly shorter body
+        const bodyOffsetX = this.gameState.player.width * 0.1;
+        const bodyOffsetY = this.gameState.player.height * 0.1; // Offset from the bottom
+
+        this.gameState.player.body.setSize(bodyWidth, bodyHeight);
+        this.gameState.player.body.setOffset(bodyOffsetX, bodyOffsetY);
+
+        // Set the origin to the bottom center of the sprite
+        this.gameState.player.setOrigin(0.5, 1);
     
         // Helper function to check if an image exists
         const checkImage = (key) => {
@@ -1593,6 +1852,47 @@ class GameScene extends Phaser.Scene {
         this.gameState.playerFeet = this.createHitbox(this.gameState.player, this.gameState.player.height / 4);
     }
 
+    createAnimations() {
+        console.log(`Creating animations for rabbit color: ${this.rabbitColor}`);
+    
+        // Left animation
+        this.anims.create({
+            key: 'left',
+            frames: [
+                { key: `rabbit-lookingleft-${this.rabbitColor}` },
+                { key: `rabbit-walkingleft1-${this.rabbitColor}` },
+                { key: `rabbit-walkingleft2-${this.rabbitColor}` },
+                { key: `rabbit-walkingleft1-${this.rabbitColor}` }
+            ],
+            frameRate: 10,
+            repeat: -1
+        });
+    
+        // Right animation
+        this.anims.create({
+            key: 'right',
+            frames: [
+                { key: `rabbit-lookingright-${this.rabbitColor}` },
+                { key: `rabbit-walkingright1-${this.rabbitColor}` },
+                { key: `rabbit-walkingright2-${this.rabbitColor}` },
+                { key: `rabbit-walkingright1-${this.rabbitColor}` }
+            ],
+            frameRate: 10,
+            repeat: -1
+        });
+    
+        // Idle animation
+        this.anims.create({
+            key: 'idle',
+            frames: [{ key: `rabbit-standing-${this.rabbitColor}` }],
+            frameRate: 10,
+            repeat: 0
+        });
+    
+        console.log('Animations created successfully');
+    }
+    
+
     createBot() {
         const spawnPoint = this.getRandomSpawnPoint();
         this.gameState.bot = this.physics.add.sprite(spawnPoint.x, spawnPoint.y, `rabbit-standing-${this.botColor}`)
@@ -1634,6 +1934,41 @@ class GameScene extends Phaser.Scene {
             repeat: -1
         });
 
+        this.anims.create({
+            key: 'botIdle',
+            frames: [{ key: `rabbit-standing-${this.botColor}` }],
+            frameRate: 10,
+            repeat: 0
+        });
+    }
+
+    createBotAnimations() {
+        this.anims.create({
+            key: 'botLeft',
+            frames: [
+                { key: `rabbit-lookingleft-${this.botColor}` },
+                { key: `rabbit-lookingleft-${this.botColor}` },
+                { key: `rabbit-walkingleft1-${this.botColor}` },
+                { key: `rabbit-walkingleft2-${this.botColor}` },
+                { key: `rabbit-walkingleft1-${this.botColor}` }
+            ],
+            frameRate: 10,
+            repeat: -1
+        });
+    
+        this.anims.create({
+            key: 'botRight',
+            frames: [
+                { key: `rabbit-lookingright-${this.botColor}` },
+                { key: `rabbit-lookingright-${this.botColor}` },
+                { key: `rabbit-walkingright1-${this.botColor}` },
+                { key: `rabbit-walkingright2-${this.botColor}` },
+                { key: `rabbit-walkingright1-${this.botColor}` }
+            ],
+            frameRate: 10,
+            repeat: -1
+        });
+    
         this.anims.create({
             key: 'botIdle',
             frames: [{ key: `rabbit-standing-${this.botColor}` }],
@@ -1797,10 +2132,8 @@ class GameScene extends Phaser.Scene {
             const atRightEdge = this.gameState.player.x >= this.sys.game.config.width - this.gameState.player.width / 2;
             const atLeftEdge = this.gameState.player.x <= this.gameState.player.width / 2;
         
-            // Get the saved control scheme
             const controlScheme = localStorage.getItem('controlScheme') || 'Arrows';
         
-            // Define key mappings based on the control scheme
             let leftKey, rightKey, upKey;
             switch (controlScheme) {
                 case 'WASD':
@@ -1814,20 +2147,44 @@ class GameScene extends Phaser.Scene {
                     upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
             }
         
-            // Use the defined keys for movement
             if (leftKey.isDown && !atLeftEdge) {
                 this.gameState.player.setVelocityX(-300);
-                this.gameState.player.anims.play('left', true);
+                if (onGround) {
+                    this.gameState.player.anims.play('left', true);
+                } else {
+                    this.gameState.player.setTexture(`rabbit-jumpingleft-${this.rabbitColor}`);
+                }
             } else if (rightKey.isDown && !atRightEdge) {
                 this.gameState.player.setVelocityX(300);
-                this.gameState.player.anims.play('right', true);
+                if (onGround) {
+                    this.gameState.player.anims.play('right', true);
+                } else {
+                    this.gameState.player.setTexture(`rabbit-jumpingright-${this.rabbitColor}`);
+                }
             } else {
                 this.gameState.player.setVelocityX(0);
-                this.gameState.player.anims.play('idle', true);
+                if (onGround) {
+                    // Check if the player just landed from a jump
+                    if (this.gameState.player.texture.key.includes('jumping')) {
+                        this.gameState.player.setTexture(`rabbit-standing-${this.rabbitColor}`);
+                    }
+                    this.gameState.player.anims.play('idle', true);
+                }
             }
         
             if (upKey.isDown && onGround) {
                 this.gameState.player.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
+                this.gameState.player.setTexture(`rabbit-jumpingstraight-${this.rabbitColor}`);
+            }
+        
+            if (isFalling) {
+                if (this.gameState.player.body.velocity.x < 0) {
+                    this.gameState.player.setTexture(`rabbit-jumpingleft-${this.rabbitColor}`);
+                } else if (this.gameState.player.body.velocity.x > 0) {
+                    this.gameState.player.setTexture(`rabbit-jumpingright-${this.rabbitColor}`);
+                } else {
+                    this.gameState.player.setTexture(`rabbit-jumpingstraight-${this.rabbitColor}`);
+                }
             }
         }
 
@@ -1839,8 +2196,15 @@ class GameScene extends Phaser.Scene {
     }
 
     updateHitbox(hitbox, entity, offsetY) {
+    if (entity === this.gameState.player) {
+        // For the player, adjust the Y position based on the new origin
+        hitbox.setPosition(entity.x, entity.y + offsetY);
+    } else {
+        // For other entities (like the bot), keep the original calculation
         hitbox.setPosition(entity.x, entity.y + offsetY);
     }
+}
+
 
     updateTimer() {
         const remainingTime = CONSTANTS.GAME_DURATION - this.gameState.timerEvent.getElapsed();
@@ -1850,7 +2214,29 @@ class GameScene extends Phaser.Scene {
     }
 
     
-
+    loadVolumeSetting() {
+        const userEmail = localStorage.getItem('userEmail');
+        if (userEmail) {
+            window.electronAPI.getVolume(userEmail)
+                .then(data => {
+                    if (data.success) {
+                        const volume = data.volume;
+                        this.sound.setVolume(volume / 100);
+                        if (this.gameState.gameSoundtrack) {
+                            this.gameState.gameSoundtrack.setVolume(volume / 100);
+                        }
+                        if (this.gameState.afterGameSoundtrack) {
+                            this.gameState.afterGameSoundtrack.setVolume(volume / 100);
+                        }
+                    } else {
+                        console.error('Failed to fetch volume:', data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching volume:', error);
+                });
+        }
+    }
     
     removeShield(character) {
         console.log(`Removing shield from ${character === this.gameState.player ? 'Player' : 'Bot'}`);
@@ -1927,8 +2313,14 @@ class GameScene extends Phaser.Scene {
         entity.body.enable = true;
         entity.setVelocity(0, 0);
 
-        if (type === 'bot') {
+        if (type === 'player') {
+        console.log(`Respawning player. Current color: ${this.rabbitColor}`);
+        this.updatePlayerColor(this.rabbitColor);  // Force color update on respawn
+        this.gameState.playerDead = false;
+        } else if (type === 'bot') {
             this.gameState.botDead = false;
+            entity.setTexture(`rabbit-standing-${this.botColor}`);
+            this.createBotAnimations();
             if (this.gameState.botMoveEvent) {
                 this.gameState.botMoveEvent.remove();
             }
@@ -1938,8 +2330,16 @@ class GameScene extends Phaser.Scene {
                 callbackScope: this,
                 loop: true
             });
-        } else if (type === 'player') {
-            this.gameState.playerDead = false;
+        } 
+    }
+
+    debugPlayerColor() {
+        if (this.gameState.player) {
+            console.log(`Debug - Player color: ${this.rabbitColor}`);
+            console.log(`Debug - Player texture key: ${this.gameState.player.texture.key}`);
+            console.log(`Debug - Player current animation: ${this.gameState.player.anims.currentAnim ? this.gameState.player.anims.currentAnim.key : 'None'}`);
+        } else {
+            console.log('Debug - Player object not found');
         }
     }
 
@@ -2203,6 +2603,7 @@ class GameScene extends Phaser.Scene {
         container.add(winText);
     
         if (message.includes('Player Wins')) {
+            console.log('Player won, awarding carrots');
             // Add the carrot reward message
             const rewardText = this.add.text(0, 30, '+10', { fontSize: '28px', fill: '#FFD700' }).setOrigin(0.5);
             container.add(rewardText);
@@ -2238,29 +2639,35 @@ class GameScene extends Phaser.Scene {
         this.add.text(300, 430, 'Restart', { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
     }
 
-awardCarrots(amount) {
-    fetch('/api/updateCarrots', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-            email: localStorage.getItem('userEmail'),
-            carrotsToAdd: amount 
-        }),
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            console.log(`Carrots updated. New count: ${data.newCarrotCount}`);
-        } else {
-            console.error('Failed to update carrots:', data.error);
+    awardCarrots(amount) {
+        console.log('Awarding carrots:', amount);
+        // Ensure amount is a valid number
+        const carrotsToAdd = Number(amount);
+        if (isNaN(carrotsToAdd) || !Number.isInteger(carrotsToAdd) || carrotsToAdd <= 0) {
+            console.error('Invalid carrots amount:', amount);
+            return;
         }
-    })
-    .catch(error => {
-        console.error('Error updating carrots:', error);
-    });
-}
+    
+        const userEmail = localStorage.getItem('userEmail');
+        if (!userEmail) {
+            console.error('No user email found in localStorage');
+            return;
+        }
+    
+        console.log('Calling updateCarrots with:', userEmail, carrotsToAdd);
+        window.electronAPI.updateCarrots(userEmail, carrotsToAdd)
+            .then(data => {
+                if (data.success) {
+                    console.log(`Carrots updated. New count: ${data.newCarrotCount}`);
+                    // Update the carrot display in your game UI here if necessary
+                } else {
+                    console.error('Failed to update carrots:', data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error updating carrots:', error);
+            });
+    }
 
     spawnShieldPowerup() {
         if (this.gameState.shieldPowerup) {
@@ -2403,7 +2810,22 @@ awardCarrots(amount) {
         this.gameState.player.body.enable = true;
         this.gameState.bot.body.enable = true;
     
-        // Respawn entities
+        // Reload the color from localStorage
+        this.rabbitColor = localStorage.getItem('selectedRabbitColor') || 'white';
+        console.log(`Restarting game with color: ${this.rabbitColor}`);
+    
+        // Update player texture and recreate animations
+        this.gameState.player.setTexture(`rabbit-standing-${this.rabbitColor}`);
+        this.createAnimations();
+    
+        // Update bot color (choose a different color from the player)
+        this.botColor = this.rabbitColor === 'white' ? 'yellow' : (this.rabbitColor === 'yellow' ? 'grey' : 'white');
+        this.gameState.bot.setTexture(`rabbit-standing-${this.botColor}`);
+    
+        // Recreate bot animations
+        this.createBotAnimations();
+    
+        // Respawn entities with the current colors
         this.respawnEntity(this.gameState.player, 'player');
         this.respawnEntity(this.gameState.bot, 'bot');
     
@@ -2436,43 +2858,60 @@ awardCarrots(amount) {
             this.gameState.botShielded = false;
         }
     
-        // Ensure the score is reset in the game state
-        this.gameState.playerScore = 0;
-        this.gameState.botScore = 0;
-    
-        // Update the score display
-        this.gameState.playerScoreText.setText('Player Score: 0');
-        this.gameState.botScoreText.setText('Bot Score: 0');
-    
         // Make sure all game objects are visible and enabled
         this.gameState.player.setVisible(true);
         this.gameState.bot.setVisible(true);
     }
 
     returnToMainMenu() {
-        // Stop any ongoing game processes
-        if (this.gameState.timerEvent) this.gameState.timerEvent.remove();
-        if (this.gameState.botMoveEvent) this.gameState.botMoveEvent.remove();
-        
+        console.log('Starting return to main menu process');
+        console.log(`Current rabbit color: ${this.rabbitColor}`);
+    
+        // Stop all ongoing game processes
+        if (this.gameState.timerEvent) {
+            this.gameState.timerEvent.remove();
+        }
+        if (this.gameState.botMoveEvent) {
+            this.gameState.botMoveEvent.remove();
+        }
+        if (this.gameState.shieldTimer) {
+            this.gameState.shieldTimer.remove();
+        }
+    
         // Stop all game sounds
         this.sound.stopAll();
+    
+        // Do NOT clear the stored rabbit color
+        // localStorage.removeItem('selectedRabbitColor');
+    
+        // Stop this scene
+        this.scene.stop();
+    
+        // Fetch the latest carrot count before returning to the main menu
+        const userEmail = localStorage.getItem('userEmail');
+        if (userEmail) {
+        window.electronAPI.getCarrotCount(userEmail)
+            .then(data => {
+                if (data.success) {
+                    this.scene.start('MainMenu', {
+                        carrotCount: data.carrotCount,
+                        fromGame: true,
+                        lastSelectedColor: this.rabbitColor
+                    });
+                } else {
+                    this.scene.start('MainMenu', { fromGame: true, lastSelectedColor: this.rabbitColor });
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching carrot count:', error);
+                this.scene.start('MainMenu', { fromGame: true, lastSelectedColor: this.rabbitColor });
+            });
+        } else {
+        this.scene.start('MainMenu', { fromGame: true, lastSelectedColor: this.rabbitColor });
+        }
 
-        // Reset game state
-        this.gameState.playerScore = 0;
-        this.gameState.botScore = 0;
-        this.gameState.playerDead = false;
-        this.gameState.botDead = false;
-        this.gameState.invulnerableUntil = 0;
-        
-        // Remove any existing game objects
-        if (this.gameState.winText) this.gameState.winText.destroy();
-        if (this.gameState.restartButton) this.gameState.restartButton.destroy();
-        if (this.gameState.returnMenuButton) this.gameState.returnMenuButton.destroy();
-        
-        // Switch to the MainMenu scene
-        this.scene.start('MainMenu');
-        this.scene.get('MainMenu').events.emit('refreshCarrotCount');
-    }
+        console.log('Return to main menu process completed');
+}
 
 
     
