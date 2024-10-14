@@ -58,7 +58,7 @@ made a standalone version of the game. this introduced a lot of bugs that have m
 
 14/10/24 - ver 0.24 
 standalone version is now complete and free of bugs (mostly)! 
-also made and installer to install and play the game on any pc!
+also made an installer to install and play the game on any pc!
 https://mega.nz/file/M8IV3TxD#rqzEUsRfmSGL8y2T2kzTJ7rRGk-TzixPb0T34pZCP5I
 
 
