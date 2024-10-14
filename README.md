@@ -56,7 +56,7 @@ game is now playable. still need to add: better cpu difficulty, 3 cpu + 1 player
 13/10/24 - ver 0.24
 made a standalone version of the game. this introduced a lot of bugs that have mostly been fixed. still 2 bugs left to solve
 
-14/10/24 - ver 0.24 
+14/10/24 - ver 0.25
 standalone version is now complete and free of bugs (mostly)! 
 also made an installer to install and play the game on any pc!
 https://mega.nz/file/M8IV3TxD#rqzEUsRfmSGL8y2T2kzTJ7rRGk-TzixPb0T34pZCP5I
