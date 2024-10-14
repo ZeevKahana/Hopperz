@@ -9,7 +9,6 @@ const CONSTANTS = {
     MAX_FALLING_SPEED: 1250
 };
 
-
 class CollisionManager {
     constructor(scene) {
         this.scene = scene;
@@ -75,7 +74,7 @@ class CollisionManager {
             this.updateDebugText(`Kill handled: ${killer === this.scene.gameState.player ? 'Player' : 'Bot'} killed ${victim === this.scene.gameState.player ? 'Player' : 'Bot'}`);
         }
 
-        this.scene.gameState.invulnerableUntil = currentTime + 1000;
+        this.scene.gameState.invulnerableUntil = currentTime + 300;
     }
 
     handleShieldCollection(character, shield) {
@@ -260,9 +259,9 @@ class LoginScene extends Phaser.Scene {
     }
 
     preload() {
-        this.load.html('loginform', 'assets/loginform.html');
-        this.load.image('loginBackground', 'assets/login_background.png');
-        this.load.audio('loginSoundtrack', 'assets/login_soundtrack.mp3');
+        this.load.html('loginform', './assets/loginform.html');
+        this.load.image('loginBackground', './assets/login_background.png');
+        this.load.audio('loginSoundtrack', './assets/login_soundtrack.mp3');
         
         const loadingText = this.add.text(400, 300, 'Loading...', { fontSize: '32px', fill: '#fff' });
         loadingText.setOrigin(0.5);
@@ -430,12 +429,16 @@ class LoginScene extends Phaser.Scene {
                         purchasedItems: data.user.purchasedItems 
                     });
                 } else {
-                    alert('Invalid email or password.');
+                    if (data.error === 'Database connection not established') {
+                        alert('Unable to connect to the server. Please try again later.');
+                    } else {
+                        alert('Invalid email or password.');
+                    }
                 }
             })
             .catch(error => {
                 console.error('Login error:', error);
-                alert('An error occurred during login.');
+                alert('An error occurred during login. Please try again later.');
             });
     }
 
@@ -460,12 +463,16 @@ class LoginScene extends Phaser.Scene {
                 if (data && data.success) {
                     alert('Registration successful. You can now log in.');
                 } else {
-                    alert('Registration failed. ' + ((data && data.error) || 'Please try again.'));
+                    if (data.error === 'Database connection not established') {
+                        alert('Unable to connect to the server. Please try again later.');
+                    } else {
+                        alert('Registration failed. ' + ((data && data.error) || 'Please try again.'));
+                    }
                 }
             })
             .catch(error => {
                 console.error('Registration error:', error);
-                alert('An error occurred during registration.');
+                alert('An error occurred during registration. Please try again later.');
             });
     }
 }
@@ -1333,6 +1340,7 @@ class GameScene extends Phaser.Scene {
         // Set up background based on the current map
         if (this.currentMap === 'desert') {
             this.add.image(400, 300, 'desert');
+            this.createCloud();
         } else if (this.currentMap === 'city') {
             this.add.image(400, 300, 'city');
         } else if (this.currentMap === 'space') {
@@ -1345,11 +1353,7 @@ class GameScene extends Phaser.Scene {
         this.createBot();
         this.createUI();
         this.updatePlayerColor(this.rabbitColor);
-    
-        if (this.currentMap === 'sky') {
-            this.createCloud();
-        }
-    
+
         if (this.currentMap === 'space') {
             this.physics.world.setBounds(0, 0, this.sys.game.config.width, Infinity);
         }
@@ -1432,7 +1436,7 @@ class GameScene extends Phaser.Scene {
     }
 
     update(time, delta) {
-        if (!this.gameState.winText) {
+        if (!this.gameState.winText) { 
             this.handlePlayerMovement();
             this.updateBotAnimation();
             this.updateHitboxes();
@@ -1441,6 +1445,7 @@ class GameScene extends Phaser.Scene {
             this.botShieldStrategy();
             this.botDecision();
     
+            // Limit falling speed for player
             if (this.gameState.player.body.velocity.y > CONSTANTS.MAX_FALLING_SPEED) {
                 this.gameState.player.setVelocityY(CONSTANTS.MAX_FALLING_SPEED);
             }
@@ -1450,27 +1455,13 @@ class GameScene extends Phaser.Scene {
                 this.gameState.bot.setVelocityY(CONSTANTS.MAX_FALLING_SPEED);
             }
     
-            // Keep player within screen boundaries
-            this.gameState.player.x = Phaser.Math.Clamp(this.gameState.player.x,
-                this.gameState.player.width / 2,
-                this.sys.game.config.width - this.gameState.player.width / 2);
-    
-            // Keep bot within screen boundaries
-            this.gameState.bot.x = Phaser.Math.Clamp(this.gameState.bot.x,
-                this.gameState.bot.width / 2,
-                this.sys.game.config.width - this.gameState.bot.width / 2);
-    
-            // Check if the player's texture matches the current rabbit color
-            const currentTexture = this.gameState.player.texture.key;
-            const expectedTexture = `rabbit-standing-${this.rabbitColor}`;
-            if (currentTexture !== expectedTexture && !this.gameState.player.anims.isPlaying) {
-                console.log(`Mismatch detected. Current: ${currentTexture}, Expected: ${expectedTexture}`);
-                this.updatePlayerColor(this.rabbitColor);
+            // Apply wrapping for space map
+            if (this.currentMap === 'space') {
+                this.wrapEntities();
             }
         }
     
         if (this.currentMap === 'space') {
-            this.wrapEntities();
             this.handleMovingPlatforms();
         }
     
@@ -1483,15 +1474,21 @@ class GameScene extends Phaser.Scene {
             this.botAI.update(actualDelta);
             this.lastTime = time;
         }
-    
+        // Update shield positions
         if (this.gameState.playerShielded && this.gameState.playerShieldSprite) {
-            this.gameState.playerShieldSprite.setPosition(this.gameState.player.x, this.gameState.player.y);
+            this.gameState.playerShieldSprite.setPosition(
+                this.gameState.player.x, 
+                this.gameState.player.y - this.gameState.player.height / 2
+            );
         }
-    
         if (this.gameState.botShielded && this.gameState.botShieldSprite) {
-            this.gameState.botShieldSprite.setPosition(this.gameState.bot.x, this.gameState.bot.y);
+            this.gameState.botShieldSprite.setPosition(
+                this.gameState.bot.x, 
+                this.gameState.bot.y - this.gameState.bot.height / 2
+            );
         }
     
+        // Debugging for distances to shield power-up
         if (this.gameState.shieldPowerup && this.gameState.shieldPowerup.active) {
             const distToPlayer = Phaser.Math.Distance.Between(
                 this.gameState.player.x, this.gameState.player.y,
@@ -1513,8 +1510,8 @@ class GameScene extends Phaser.Scene {
                 console.log('Player is overlapping with shield');
             }
         }
-    
     }
+    
 
     updatePlayerColor(newColor) {
         console.log(`Updating player color to: ${newColor}`);
@@ -1584,26 +1581,35 @@ class GameScene extends Phaser.Scene {
 
     wrapEntities() {
         const wrapObject = (obj) => {
-            if (obj.y > this.sys.game.config.height) {
-                obj.y = 0;
+            const height = this.sys.game.config.height;
+            if (obj.y > height) {
+                obj.y -= height;
+                // Preserve velocity
+                obj.body.velocity.y = Math.min(obj.body.velocity.y, CONSTANTS.MAX_FALLING_SPEED);
             } else if (obj.y < 0) {
-                obj.y = this.sys.game.config.height;
+                obj.y += height;
+                // Preserve upward velocity
+                obj.body.velocity.y = Math.max(obj.body.velocity.y, -CONSTANTS.MAX_FALLING_SPEED);
             }
         };
-
+    
         wrapObject(this.gameState.player);
-       
+        wrapObject(this.gameState.bot);
+    
+        // Update hitboxes after wrapping
         this.updateHitbox(this.gameState.playerHead, this.gameState.player, -this.gameState.player.height / 2);
         this.updateHitbox(this.gameState.playerFeet, this.gameState.player, this.gameState.player.height / 2);
         this.updateHitbox(this.gameState.botHead, this.gameState.bot, -this.gameState.bot.height / 2);
         this.updateHitbox(this.gameState.botFeet, this.gameState.bot, this.gameState.bot.height / 2);
     }
+    
+    
+    
 
     handleMovingPlatforms() {
         const handleEntityOnPlatform = (entity) => {
             let onMovingPlatform = false;
             this.gameState.movingPlatforms.forEach(platform => {
-                // Changed this condition to work for both top and bottom platforms
                 if (entity.body.touching.down && Math.abs(entity.y - platform.y) <= platform.height / 2 + entity.height / 2) {
                     onMovingPlatform = true;
                     const deltaX = platform.x - platform.previousX;
@@ -1621,13 +1627,8 @@ class GameScene extends Phaser.Scene {
             platform.previousX = platform.x;
         });
     
-        // Handle wrapping for entities not on moving platforms
-        if (!playerOnMovingPlatform) {
-            this.wrapEntities(this.gameState.player);
-        }
-        if (!botOnMovingPlatform) {
-            this.wrapEntities(this.gameState.bot);
-        }
+        // Always apply wrapping, regardless of whether entities are on platforms
+        this.wrapEntities();
     }
     
 
@@ -2132,8 +2133,10 @@ class GameScene extends Phaser.Scene {
             const atRightEdge = this.gameState.player.x >= this.sys.game.config.width - this.gameState.player.width / 2;
             const atLeftEdge = this.gameState.player.x <= this.gameState.player.width / 2;
         
+            // Get the saved control scheme
             const controlScheme = localStorage.getItem('controlScheme') || 'Arrows';
         
+            // Define key mappings based on the control scheme
             let leftKey, rightKey, upKey;
             switch (controlScheme) {
                 case 'WASD':
@@ -2147,46 +2150,23 @@ class GameScene extends Phaser.Scene {
                     upKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP);
             }
         
+            // Use the defined keys for movement
             if (leftKey.isDown && !atLeftEdge) {
                 this.gameState.player.setVelocityX(-300);
-                if (onGround) {
-                    this.gameState.player.anims.play('left', true);
-                } else {
-                    this.gameState.player.setTexture(`rabbit-jumpingleft-${this.rabbitColor}`);
-                }
+                this.gameState.player.anims.play('left', true);
             } else if (rightKey.isDown && !atRightEdge) {
                 this.gameState.player.setVelocityX(300);
-                if (onGround) {
-                    this.gameState.player.anims.play('right', true);
-                } else {
-                    this.gameState.player.setTexture(`rabbit-jumpingright-${this.rabbitColor}`);
-                }
+                this.gameState.player.anims.play('right', true);
             } else {
                 this.gameState.player.setVelocityX(0);
-                if (onGround) {
-                    // Check if the player just landed from a jump
-                    if (this.gameState.player.texture.key.includes('jumping')) {
-                        this.gameState.player.setTexture(`rabbit-standing-${this.rabbitColor}`);
-                    }
-                    this.gameState.player.anims.play('idle', true);
-                }
+                this.gameState.player.anims.play('idle', true);
             }
         
             if (upKey.isDown && onGround) {
                 this.gameState.player.setVelocityY(CONSTANTS.PLAYER_JUMP_VELOCITY);
-                this.gameState.player.setTexture(`rabbit-jumpingstraight-${this.rabbitColor}`);
-            }
-        
-            if (isFalling) {
-                if (this.gameState.player.body.velocity.x < 0) {
-                    this.gameState.player.setTexture(`rabbit-jumpingleft-${this.rabbitColor}`);
-                } else if (this.gameState.player.body.velocity.x > 0) {
-                    this.gameState.player.setTexture(`rabbit-jumpingright-${this.rabbitColor}`);
-                } else {
-                    this.gameState.player.setTexture(`rabbit-jumpingstraight-${this.rabbitColor}`);
-                }
             }
         }
+        
 
     updateHitboxes() {
         this.updateHitbox(this.gameState.playerHead, this.gameState.player, -this.gameState.player.height / 2);
@@ -2595,22 +2575,21 @@ class GameScene extends Phaser.Scene {
         this.gameState.gameSoundtrack.stop();
         this.gameState.afterGameSoundtrack.play();
         
-        // Create a container for the win message and carrot reward
-        const container = this.add.container(400, 250);
+        // Create a container for all end-game UI elements
+        this.gameState.endGameContainer = this.add.container(400, 300);
     
         // Add the win message
-        const winText = this.add.text(0, -30, message, { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
-        container.add(winText);
+        const winText = this.add.text(0, -80, message, { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
+        this.gameState.endGameContainer.add(winText);
     
         if (message.includes('Player Wins')) {
-            console.log('Player won, awarding carrots');
             // Add the carrot reward message
-            const rewardText = this.add.text(0, 30, '+10', { fontSize: '28px', fill: '#FFD700' }).setOrigin(0.5);
-            container.add(rewardText);
+            const rewardText = this.add.text(0, -20, '+10', { fontSize: '28px', fill: '#FFD700' }).setOrigin(0.5);
+            this.gameState.endGameContainer.add(rewardText);
     
             // Add the carrot image
-            const carrotImage = this.add.image(50, 30, 'carrot').setScale(0.5);
-            container.add(carrotImage);
+            const carrotImage = this.add.image(50, -20, 'carrot').setScale(0.5);
+            this.gameState.endGameContainer.add(carrotImage);
     
             // Animate the carrot reward
             this.tweens.add({
@@ -2628,15 +2607,25 @@ class GameScene extends Phaser.Scene {
         }
         
         // Restart button
-        this.gameState.restartButton = this.add.image(300, 430, 'button').setInteractive().setScale(0.05);
+        this.gameState.restartButton = this.add.image(-100, 100, 'button').setInteractive().setScale(0.05);
         this.gameState.restartButton.on('pointerdown', () => this.restartGame());
         
         // Return to Main Menu button
-        this.gameState.returnMenuButton = this.add.image(500, 430, 'returnMenuButton').setInteractive().setScale(0.15);
+        this.gameState.returnMenuButton = this.add.image(100, 100, 'returnMenuButton').setInteractive().setScale(0.15);
         this.gameState.returnMenuButton.on('pointerdown', () => this.returnToMainMenu());
         
-        // Add text labels for the buttons
-        this.add.text(300, 430, 'Restart', { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
+        // Add text label for the restart button
+        const restartText = this.add.text(-100, 100, 'Restart', { fontSize: '20px', fill: '#fff' }).setOrigin(0.5);
+    
+        // Add buttons and labels to the container
+        this.gameState.endGameContainer.add([this.gameState.restartButton, this.gameState.returnMenuButton, restartText]);
+    
+        // Add a semi-transparent background
+        const bgGraphics = this.add.graphics();
+        bgGraphics.fillStyle(0x000000, 0.7);
+        bgGraphics.fillRect(-400, -300, 800, 600);
+        this.gameState.endGameContainer.add(bgGraphics);
+        this.gameState.endGameContainer.sendToBack(bgGraphics);
     }
 
     awardCarrots(amount) {
@@ -2742,10 +2731,8 @@ class GameScene extends Phaser.Scene {
     }
 
     collectShield(character, shield) {
-        console.log(`Collision detected between character and shield`);
-        console.log(`Character position: x: ${character.x}, y: ${character.y}`);
-        console.log(`Shield position: x: ${shield.x}, y: ${shield.y}`);
-    
+        console.log(`Shield collected by ${character === this.gameState.player ? 'Player' : 'Bot'}`);
+        
         // If character already has a shield, just destroy the powerup
         if ((character === this.gameState.player && this.gameState.playerShielded) ||
             (character === this.gameState.bot && this.gameState.botShielded)) {
@@ -2753,21 +2740,18 @@ class GameScene extends Phaser.Scene {
             return;
         }
     
-        // If we reach here, the character doesn't have a shield
         shield.destroy();
         
-        const shieldSprite = this.add.image(character.x, character.y, 'shieldPowerup');
+        const shieldSprite = this.add.image(character.x, character.y - character.height / 2, 'shieldPowerup');
         shieldSprite.setScale(0.17);
         shieldSprite.setAlpha(0.4);
         
         if (character === this.gameState.player) {
             this.gameState.playerShielded = true;
             this.gameState.playerShieldSprite = shieldSprite;
-            console.log('Shield collected by Player');
         } else {
             this.gameState.botShielded = true;
             this.gameState.botShieldSprite = shieldSprite;
-            console.log('Shield collected by Bot');
         }
     }
 
@@ -2782,27 +2766,11 @@ class GameScene extends Phaser.Scene {
         this.gameState.playerScoreText.setText('Player Score: 0');
         this.gameState.botScoreText.setText('Bot Score: 0');
     
-        // Clear all UI elements
-        if (this.gameState.winText) {
-            this.gameState.winText.destroy();
-            this.gameState.winText = null;
+        // Clear all end-game UI elements
+        if (this.gameState.endGameContainer) {
+            this.gameState.endGameContainer.destroy();
+            this.gameState.endGameContainer = null;
         }
-        if (this.gameState.restartButton) {
-            this.gameState.restartButton.destroy();
-            this.gameState.restartButton = null;
-        }
-        if (this.gameState.returnMenuButton) {
-            this.gameState.returnMenuButton.destroy();
-            this.gameState.returnMenuButton = null;
-        }
-    
-        // Make sure to destroy any text associated with the buttons
-        this.children.getAll().forEach((child) => {
-            if (child instanceof Phaser.GameObjects.Text && 
-                (child.text === 'Restart' || child.text === 'Return to Menu')) {
-                child.destroy();
-            }
-        });
     
         // Reset player and bot states
         this.gameState.playerDead = false;
@@ -2861,6 +2829,9 @@ class GameScene extends Phaser.Scene {
         // Make sure all game objects are visible and enabled
         this.gameState.player.setVisible(true);
         this.gameState.bot.setVisible(true);
+    
+        // Reset the timer text
+        this.gameState.timerText.setText('Time: 03:00');
     }
 
     returnToMainMenu() {
