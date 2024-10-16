@@ -59,6 +59,13 @@ made a standalone version of the game. this introduced a lot of bugs that have m
 14/10/24 - ver 0.25
 standalone version is now complete and free of bugs (mostly)! 
 also made an installer to install and play the game on any pc!
-https://mega.nz/file/M8IV3TxD#rqzEUsRfmSGL8y2T2kzTJ7rRGk-TzixPb0T34pZCP5I
+//OLD//https://mega.nz/file/M8IV3TxD#rqzEUsRfmSGL8y2T2kzTJ7rRGk-TzixPb0T34pZCP5I //OLD//
 
-
+16/10/24 - ver 0.26
+-QoL fixes - added a timerbox for better visualization of the time.
+-added red color to base colors to choose from! now there are 4 base colors
+-popup texts are now smoother and dont pause the soundtracks!
+-shield powerup now properly matches its hitbox
+-game now continues to play even if player minimizes the screen
+-all these changes are in preparation of multiplayer deployment.
+new version available: https://mega.nz/file/V4pkABgJ#ybpi2jlCoP-1FpPI8U152x7FlDE1u6emieXvLLeG1-E
