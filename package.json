@@ -1,16 +1,60 @@
 {
-  "dependencies": {
-    "helmet": "^7.1.0",
-    "phaser": "^3.80.1"
-  },
-  "name": "project",
+  "name": "Hopperz",
   "version": "1.0.0",
-  "main": "bs-config.js",
+  "description": "Your game description",
+  "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "electron .",
+    "build": "electron-builder build --win --publish never",
+    "deploy": "electron-builder build --win --publish always"
   },
-  "keywords": [],
-  "author": "",
+  "author": "Your Name",
   "license": "ISC",
-  "description": ""
+  "devDependencies": {
+    "electron": "^13.6.9",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "dotenv": "^10.0.0",
+    "express": "^4.17.1",
+    "mongoose": "^6.13.3"
+  },
+  "build": {
+    "appId": "com.yourdomain.hopperz",
+    "productName": "Hopperz",
+    "files": [
+      "**/*",
+      "!{dist,.git,.vscode,docs,scripts}/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Hopperz"
+    },
+    "extraResources": [
+      {
+        "from": "public",
+        "to": "public"
+      },
+      ".env"
+    ],
+    "asar": false
+  }
 }
