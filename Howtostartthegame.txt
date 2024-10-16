@@ -1,4 +1,4 @@
-Terminal > cd "project directory" > node server.js 
+Terminal > cd "project directory" > npm start
 
 
 
@@ -7,4 +7,8 @@ Terminal > cd "project directory" > node server.js
 
 
                  /// old///
+
+Terminal > cd "project directory" > node server.js 
+
+
 browser-sync start --config bs-config.js // npx browser-sync start --server --files "*.html, *.js" --index "hopz.html"

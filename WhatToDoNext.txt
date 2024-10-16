@@ -12,7 +12,7 @@
 12. CPU difficulty (easy/normal/hard) (kinda done)
 13. make more bots on the screen (3 bots + 1 player)
 14. fix bugs.
-
+15. before starting a match have a 3! 2! 1! GO and then game begins
 
 
 18.Mode variations - after pressing start - give players match options to choose color, and game settings, number of enemies
@@ -38,10 +38,4 @@ x2 points for next kill,
 fake powerup???
 
 
-bugs:
 
-1. jumping straight causes a bug
-2. when wrapping in space map gravity needs to be consistent and not reset.
-3. shield powerup slightly below player model
-3. .exe file that starts the game.
-4. install file that installs the game in another computer

@@ -1,3 +1,5 @@
+import { createPopupMessage } from './GameUtils.js';
+
 const CONSTANTS = {
     PLAYER_JUMP_VELOCITY: -880,
     JUMP_OFF_VELOCITY: -800,
@@ -12,7 +14,7 @@ const CONSTANTS = {
 class CollisionManager {
     constructor(scene) {
         this.scene = scene;
-        this.debugText = scene.add.text(10, 10, 'Debug Info', { fontSize: '16px', fill: '#ffffff' });
+       // this.debugText = scene.add.text(10, 10, 'Debug Info', { fontSize: '16px', fill: '#ffffff' });
     }
 
     setupColliders() {
@@ -29,21 +31,21 @@ class CollisionManager {
     handleCharacterCollision(entity1, entity2) {
         const currentTime = this.scene.time.now;
         if (currentTime < this.scene.gameState.invulnerableUntil) {
-            this.updateDebugText('Collision ignored: Invulnerable');
+          //  this.updateDebugText('Collision ignored: Invulnerable');
             return;
         }
 
         const verticalDistance = entity2.y - entity1.y;
         const horizontalDistance = Math.abs(entity1.x - entity2.x);
 
-        this.updateDebugText(`Collision detected:
-        Vertical Distance: ${verticalDistance.toFixed(2)}
-        Horizontal Distance: ${horizontalDistance.toFixed(2)}
-        Entity1 (${entity1 === this.scene.gameState.player ? 'Player' : 'Bot'}): y=${entity1.y.toFixed(2)}, vy=${entity1.body.velocity.y.toFixed(2)}
-        Entity2 (${entity2 === this.scene.gameState.player ? 'Player' : 'Bot'}): y=${entity2.y.toFixed(2)}, vy=${entity2.body.velocity.y.toFixed(2)}`);
+        // this.updateDebugText(`Collision detected:
+        // Vertical Distance: ${verticalDistance.toFixed(2)}
+        // Horizontal Distance: ${horizontalDistance.toFixed(2)}
+        // Entity1 (${entity1 === this.scene.gameState.player ? 'Player' : 'Bot'}): y=${entity1.y.toFixed(2)}, vy=${entity1.body.velocity.y.toFixed(2)}
+        // Entity2 (${entity2 === this.scene.gameState.player ? 'Player' : 'Bot'}): y=${entity2.y.toFixed(2)}, vy=${entity2.body.velocity.y.toFixed(2)}`);
 
         if (Math.abs(verticalDistance) < entity1.height * 0.25 && horizontalDistance < entity1.width * 0.8) {
-            this.updateDebugText('Collision ignored: Entities too close horizontally or vertically');
+            //this.updateDebugText('Collision ignored: Entities too close horizontally or vertically');
             return;
         }
 
@@ -55,23 +57,23 @@ class CollisionManager {
             killer = entity2;
             victim = entity1;
         } else {
-            this.updateDebugText('Collision ignored: No clear killer/victim');
+           // this.updateDebugText('Collision ignored: No clear killer/victim');
             return;
         }
 
-        this.updateDebugText(`Killer: ${killer === this.scene.gameState.player ? 'Player' : 'Bot'}, Victim: ${victim === this.scene.gameState.player ? 'Player' : 'Bot'}`);
+      //  this.updateDebugText(`Killer: ${killer === this.scene.gameState.player ? 'Player' : 'Bot'}, Victim: ${victim === this.scene.gameState.player ? 'Player' : 'Bot'}`);
 
         if (victim === this.scene.gameState.player && this.scene.gameState.playerShielded) {
             this.scene.removeShield(this.scene.gameState.player);
             killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
-            this.updateDebugText('Player shield activated');
+           // this.updateDebugText('Player shield activated');
         } else if (victim === this.scene.gameState.bot && this.scene.gameState.botShielded) {
             this.scene.removeShield(this.scene.gameState.bot);
             killer.setVelocityY(CONSTANTS.JUMP_OFF_VELOCITY);
-            this.updateDebugText('Bot shield activated');
+          //  this.updateDebugText('Bot shield activated');
         } else {
             this.scene.handleKill(killer, victim);
-            this.updateDebugText(`Kill handled: ${killer === this.scene.gameState.player ? 'Player' : 'Bot'} killed ${victim === this.scene.gameState.player ? 'Player' : 'Bot'}`);
+           // this.updateDebugText(`Kill handled: ${killer === this.scene.gameState.player ? 'Player' : 'Bot'} killed ${victim === this.scene.gameState.player ? 'Player' : 'Bot'}`);
         }
 
         this.scene.gameState.invulnerableUntil = currentTime + 300;
@@ -84,10 +86,10 @@ class CollisionManager {
         }
     }
 
-    updateDebugText(message) {
-        this.debugText.setText(message);
-        console.log(message);  // Also log to console for easier debugging
-    }
+   // updateDebugText(message) {
+     //   this.debugText.setText(message);
+    //    console.log(message);  // Also log to console for easier debugging
+   // }
 }
 
 
@@ -299,6 +301,8 @@ class LoginScene extends Phaser.Scene {
             }
         });
 
+        this.game.domContainer.style.zIndex = '1';
+
         this.createVolumeSlider();
         this.input.on('pointerdown', () => this.handleUserInteraction());
     }
@@ -394,21 +398,26 @@ class LoginScene extends Phaser.Scene {
         }
     }
 
-    updateDebugText(message) {
-        if (this.debugText) {
-            this.debugText.setText([
-                `Music Ready: ${this.musicReady}`,
-                `Music Playing: ${this.music ? this.music.isPlaying : 'N/A'}`,
-                `Last Action: ${message || 'None'}`
-            ]);
-        }
-    }
+    // updateDebugText(message) {
+    //     if (this.debugText) {
+    //         this.debugText.setText([
+    //             `Music Ready: ${this.musicReady}`,
+    //             `Music Playing: ${this.music ? this.music.isPlaying : 'N/A'}`,
+    //             `Last Action: ${message || 'None'}`
+    //         ]);
+    //     }
+    // }
 
     login(email, password, rememberMe) {
         console.log('Attempting login with:', email);
         if (!window.electronAPI || !window.electronAPI.login) {
             console.error('Electron API or login method not available');
-            alert('Login functionality is not available');
+            createPopupMessage(this, 'Login functionality is not available', () => {
+                const loginForm = document.querySelector('.login-form');
+                if (loginForm) {
+                    loginForm.style.display = 'block';
+                }
+            });
             return;
         }
     
@@ -429,31 +438,39 @@ class LoginScene extends Phaser.Scene {
                         purchasedItems: data.user.purchasedItems 
                     });
                 } else {
-                    if (data.error === 'Database connection not established') {
-                        alert('Unable to connect to the server. Please try again later.');
-                    } else {
-                        alert('Invalid email or password.');
-                    }
+                    createPopupMessage(this, data.error === 'Database connection not established' 
+                        ? 'Unable to connect to the server. Please try again later.' 
+                        : 'Invalid email or password.', 
+                    () => {
+                        const loginForm = document.querySelector('.login-form');
+                        if (loginForm) {
+                            loginForm.style.display = 'block';
+                        }
+                    });
                 }
             })
             .catch(error => {
                 console.error('Login error:', error);
-                alert('An error occurred during login. Please try again later.');
+                createPopupMessage(this, 'An error occurred during login. Please try again later.', () => {
+                    const loginForm = document.querySelector('.login-form');
+                    if (loginForm) {
+                        loginForm.style.display = 'block';
+                    }
+                });
             });
     }
-
-    stopMusic() {
-        if (this.music && this.music.isPlaying) {
-            this.music.stop();
-            this.updateDebugText("Music stopped");
-        }
-    }
-
+    
+    
     register(email, password) {
         console.log('Attempting registration with:', email);
         if (!window.electronAPI || !window.electronAPI.register) {
             console.error('Electron API or register method not available');
-            alert('Registration functionality is not available');
+            createPopupMessage(this, 'Registration functionality is not available', () => {
+                const loginForm = document.querySelector('.login-form');
+                if (loginForm) {
+                    loginForm.style.display = 'block';
+                }
+            });
             return;
         }
     
@@ -461,22 +478,43 @@ class LoginScene extends Phaser.Scene {
             .then(data => {
                 console.log('Registration response:', data);
                 if (data && data.success) {
-                    alert('Registration successful. You can now log in.');
+                    createPopupMessage(this, 'Registration successful. You can now log in.', () => {
+                        const loginForm = document.querySelector('.login-form');
+                        if (loginForm) {
+                            loginForm.style.display = 'block';
+                        }
+                    });
                 } else {
-                    if (data.error === 'Database connection not established') {
-                        alert('Unable to connect to the server. Please try again later.');
-                    } else {
-                        alert('Registration failed. ' + ((data && data.error) || 'Please try again.'));
-                    }
+                    createPopupMessage(this, data.error === 'Database connection not established'
+                        ? 'Unable to connect to the server. Please try again later.'
+                        : 'Registration failed. ' + ((data && data.error) || 'Please try again.'),
+                    () => {
+                        const loginForm = document.querySelector('.login-form');
+                        if (loginForm) {
+                            loginForm.style.display = 'block';
+                        }
+                    });
                 }
             })
             .catch(error => {
                 console.error('Registration error:', error);
-                alert('An error occurred during registration. Please try again later.');
+                createPopupMessage(this, 'An error occurred during registration. Please try again later.', () => {
+                    const loginForm = document.querySelector('.login-form');
+                    if (loginForm) {
+                        loginForm.style.display = 'block';
+                    }
+                });
             });
     }
-}
+    
+    stopMusic() {
+        if (this.music && this.music.isPlaying) {
+            this.music.stop();
+         //   this.updateDebugText("Music stopped");
+        }
+    }
 
+}
 
 class MainMenuScene extends Phaser.Scene {
     constructor() {
@@ -514,6 +552,7 @@ class MainMenuScene extends Phaser.Scene {
       this.load.image('white-standing', 'assets/rabbit/white/standing.png');
       this.load.image('yellow-standing', 'assets/rabbit/yellow/standing.png');
       this.load.image('grey-standing', 'assets/rabbit/grey/standing.png');
+      this.load.image('red-standing', 'assets/rabbit/red/standing.png');
       this.load.image('blue-standing', 'assets/rabbit/blue/standing.png');
       this.load.image('purple-standing', 'assets/rabbit/purple/standing.png');
       this.load.image('carrot', 'assets/carrot.png');
@@ -671,9 +710,15 @@ onWakeFromGame(sys, data) {
         this.selectedColor = color;
         localStorage.setItem('selectedRabbitColor', color);
         console.log(`Color stored in localStorage: ${localStorage.getItem('selectedRabbitColor')}`);
+        
+        // Reset all buttons to original scale
         this.colorButtons.forEach(button => {
-            button.setTint(button === selectedButton ? 0xffff00 : 0xffffff);
+            button.setScale(1);
         });
+        
+        // Scale up the selected button
+        selectedButton.setScale(1.3);
+        
         this.updateStartButton();
     }
     
@@ -779,36 +824,52 @@ onWakeFromGame(sys, data) {
             fill: '#fff' 
         }).setOrigin(0.5);
     
-        // Regular colors
-        const baseColors = ['white', 'yellow', 'grey'];
-        baseColors.forEach((color, index) => {
-            const button = this.add.image(130 + index * 70, 200, `${color}-standing`)
-                .setScale(1)
-                .setInteractive();
-    
-            button.on('pointerdown', () => this.selectColor(color, button));
-            button.on('pointerover', () => button.setScale(1.05));
-            button.on('pointerout', () => button.setScale(1));
-    
-            this.colorButtons.push(button);
+         // Regular colors
+    const baseColors = ['white', 'yellow', 'grey', 'red'];
+    baseColors.forEach((color, index) => {
+        const button = this.add.image(95 + index * 70, 200, `${color}-standing`)
+            .setScale(1)
+            .setInteractive();
+
+        button.on('pointerdown', () => this.selectColor(color, button));
+        button.on('pointerover', () => {
+            if (this.selectedColor !== color) {
+                button.setScale(1.1);
+            }
         });
-    
-        // Purchased colors
-        const purchasedColors = [];
-        if (this.purchasedItems.has('blueRabbit')) purchasedColors.push('blue');
-        if (this.purchasedItems.has('purpleRabbit')) purchasedColors.push('purple');
-    
-        purchasedColors.forEach((color, index) => {
-            const button = this.add.image(130 + index * 70, 270, `${color}-standing`)
-                .setScale(1)
-                .setInteractive();
-    
-            button.on('pointerdown', () => this.selectColor(color, button));
-            button.on('pointerover', () => button.setScale(1.05));
-            button.on('pointerout', () => button.setScale(1));
-    
-            this.colorButtons.push(button);
+        button.on('pointerout', () => {
+            if (this.selectedColor !== color) {
+                button.setScale(1);
+            }
         });
+
+        this.colorButtons.push(button);
+    });
+
+    // Purchased colors 
+    const purchasedColors = [];
+    if (this.purchasedItems.has('blueRabbit')) purchasedColors.push('blue');
+    if (this.purchasedItems.has('purpleRabbit')) purchasedColors.push('purple');
+
+    purchasedColors.forEach((color, index) => {
+        const button = this.add.image(95 + index * 70, 270, `${color}-standing`)
+            .setScale(1)
+            .setInteractive();
+
+        button.on('pointerdown', () => this.selectColor(color, button));
+        button.on('pointerover', () => {
+            if (this.selectedColor !== color) {
+                button.setScale(1.1);
+            }
+        });
+        button.on('pointerout', () => {
+            if (this.selectedColor !== color) {
+                button.setScale(1);
+            }
+        });
+
+        this.colorButtons.push(button);
+    });
     
         // Difficulty selection
         const difficultyTitle = this.add.text(600, 150, 'Select difficulty', { 
@@ -1232,16 +1293,17 @@ onWakeFromGame(sys, data) {
                     this.carrotCount = data.newCarrotCount;
                     this.carrotText.setText(`${this.carrotCount}`);
                     this.purchasedItems.add(itemId);  // Mark item as purchased
-                    alert('Purchase successful!');
-                    this.closeShop();
-                    this.openShop();  // Reopen shop to reflect changes
+                    createPopupMessage(this, 'Purchase successful!', () => {
+                        this.closeShop();
+                        this.openShop();  // Reopen shop to reflect changes
+                    });
                 } else {
-                    alert('Purchase failed: ' + data.error);
+                    createPopupMessage(this, 'Purchase failed: ' + data.error);
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('An error occurred during purchase.');
+                createPopupMessage(this, 'An error occurred during purchase.');
             });
     }
     
@@ -1267,7 +1329,9 @@ class GameScene extends Phaser.Scene {
         console.log(`Initializing GameScene with rabbit color: ${this.rabbitColor}`);
         console.log(`Color from localStorage: ${localStorage.getItem('selectedRabbitColor')}`);
     
-        this.botColor = this.rabbitColor === 'white' ? 'yellow' : (this.rabbitColor === 'yellow' ? 'grey' : 'white');
+        this.botColor = this.rabbitColor === 'white' ? 'yellow' : 
+                    (this.rabbitColor === 'yellow' ? 'grey' : 
+                    (this.rabbitColor === 'grey' ? 'red' : 'white'));
 
         // Ensure the color is set in localStorage
         localStorage.setItem('selectedRabbitColor', this.rabbitColor);
@@ -1304,7 +1368,7 @@ class GameScene extends Phaser.Scene {
     }
     
     preload() {
-        const colors = ['white', 'yellow', 'grey', 'blue', 'purple'];
+        const colors = ['white', 'yellow', 'grey', 'red', 'blue', 'purple'];
         this.load.image('desert', 'assets/desert.png');
         this.load.image('platform', 'assets/platform.png');
         this.load.image('cloud', 'assets/cloud.png');
@@ -1331,6 +1395,7 @@ class GameScene extends Phaser.Scene {
         this.load.audio('gameSoundtrack', 'assets/game_soundtrack.mp3');
         this.load.audio('afterGameSoundtrack', 'assets/aftergame_soundtrack.mp3');
         this.load.image('shieldPowerup', 'assets/shield-powerup.png');
+        this.load.image('time_box', 'assets/time_box.png');
     }
 
     create() {
@@ -1346,6 +1411,9 @@ class GameScene extends Phaser.Scene {
         } else if (this.currentMap === 'space') {
             this.add.image(400, 300, 'space');
         }
+
+        // Add time box
+        this.timeBox = this.add.image(400, 50, 'time_box').setScale(0.3);  // Adjust scale as needed
     
         this.createPlatforms();
         this.createPlayer();
@@ -1353,6 +1421,23 @@ class GameScene extends Phaser.Scene {
         this.createBot();
         this.createUI();
         this.updatePlayerColor(this.rabbitColor);
+
+
+        // Modify existing timer text
+        this.gameState.timerText = this.add.text(400, 27, '03:00', { 
+            fontSize: '24px', 
+            fill: '#000',
+            fontFamily: 'Arial',
+            fontWeight: 'bold'
+        }).setOrigin(0.5);
+
+        // Remove old UI elements
+        if (this.gameState.playerScoreText) this.gameState.playerScoreText.destroy();
+        if (this.gameState.botScoreText) this.gameState.botScoreText.destroy();
+
+        // Create new score texts
+        this.gameState.playerScoreText = this.add.text(16, 16, 'Player Score: 0', { fontSize: '24px', fill: '#000' });
+        this.gameState.botScoreText = this.add.text(16, 50, 'Bot Score: 0', { fontSize: '24px', fill: '#000' });
 
         if (this.currentMap === 'space') {
             this.physics.world.setBounds(0, 0, this.sys.game.config.width, Infinity);
@@ -2032,9 +2117,9 @@ class GameScene extends Phaser.Scene {
     }
 
     createUI() {
-        this.gameState.playerScoreText = this.add.text(16, 16, 'Player Score: 0', { fontSize: '32px', fill: '#000' });
-        this.gameState.botScoreText = this.add.text(16, 50, 'Bot Score: 0', { fontSize: '32px', fill: '#000' });
-        this.gameState.timerText = this.add.text(16, 84, 'Time: 03:00', { fontSize: '32px', fill: '#000' });
+        this.gameState.playerScoreText = this.add.text(16, 16, 'Player Score: 0', { fontSize: '24px', fill: '#000' });
+        this.gameState.botScoreText = this.add.text(16, 50, 'Bot Score: 0', { fontSize: '24px', fill: '#000' });
+        // Remove the old timer text creation
     }
 
     createCloud() {
@@ -2186,12 +2271,12 @@ class GameScene extends Phaser.Scene {
 }
 
 
-    updateTimer() {
-        const remainingTime = CONSTANTS.GAME_DURATION - this.gameState.timerEvent.getElapsed();
-        const minutes = Math.floor(remainingTime / 60000);
-        const seconds = Math.floor((remainingTime % 60000) / 1000);
-        this.gameState.timerText.setText(`Time: ${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
-    }
+updateTimer() {
+    const remainingTime = CONSTANTS.GAME_DURATION - this.gameState.timerEvent.getElapsed();
+    const minutes = Math.floor(remainingTime / 60000);
+    const seconds = Math.floor((remainingTime % 60000) / 1000);
+    this.gameState.timerText.setText(`${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`);
+}
 
     
     loadVolumeSetting() {
@@ -2677,20 +2762,22 @@ class GameScene extends Phaser.Scene {
     
         this.gameState.shieldPowerup = this.physics.add.sprite(x, y, 'shieldPowerup');
         this.gameState.shieldPowerup.setScale(0.15); // Adjust scale as needed
-        
-        // Set a smaller circular collision body
-        const collisionRadius = powerupSize / 4; // Decreased collision radius
-        this.gameState.shieldPowerup.body.setCircle(collisionRadius, 
-            (this.gameState.shieldPowerup.width - collisionRadius * 2) / 2, 
-            (this.gameState.shieldPowerup.height - collisionRadius * 2) / 2);
-        
+    
+        // Set a slightly smaller collision body
+        const hitboxSize = 200; // Adjust this value to make the hitbox smaller or larger
+        this.gameState.shieldPowerup.body.setCircle(hitboxSize / 2);
+        this.gameState.shieldPowerup.body.setOffset(
+            (this.gameState.shieldPowerup.width - hitboxSize) / 2,
+            (this.gameState.shieldPowerup.height - hitboxSize) / 2
+        );
+    
         this.gameState.shieldPowerup.setCollideWorldBounds(true);
         this.gameState.shieldPowerup.body.allowGravity = false; // Disable gravity
     
         // Create a yoyo tween
         this.tweens.add({
             targets: this.gameState.shieldPowerup,
-            y: y + 30, // Move 50 pixels down
+            y: y + 30, // Move 30 pixels down
             duration: 1000,
             ease: 'Sine.easeInOut',
             yoyo: true,
@@ -2703,11 +2790,22 @@ class GameScene extends Phaser.Scene {
     
         console.log(`Shield powerup spawned at x: ${x}, y: ${y}`);
     }
-
+    
     checkShieldProximity(character, shield) {
-        const distance = Phaser.Math.Distance.Between(character.x, character.y, shield.x, shield.y);
-        console.log(`Distance to shield: ${distance.toFixed(2)}`);
-        return distance < 25; // Adjust this value as needed for precise collection
+        // Get the bounds of both the character and the shield
+        const characterBounds = character.getBounds();
+        const shieldBounds = shield.getBounds();
+    
+        // Check if the bounds intersect
+        const intersects = Phaser.Geom.Intersects.RectangleToRectangle(characterBounds, shieldBounds);
+    
+        if (intersects) {
+            console.log('Character overlapping with shield');
+        } else {
+            console.log('No overlap detected');
+        }
+    
+        return intersects;
     }
     
     
@@ -2740,18 +2838,21 @@ class GameScene extends Phaser.Scene {
             return;
         }
     
+        // If we reach here, the character doesn't have a shield
         shield.destroy();
         
-        const shieldSprite = this.add.image(character.x, character.y - character.height / 2, 'shieldPowerup');
+        const shieldSprite = this.add.image(character.x, character.y, 'shieldPowerup');
         shieldSprite.setScale(0.17);
         shieldSprite.setAlpha(0.4);
         
         if (character === this.gameState.player) {
             this.gameState.playerShielded = true;
             this.gameState.playerShieldSprite = shieldSprite;
+            console.log('Shield collected by Player');
         } else {
             this.gameState.botShielded = true;
             this.gameState.botShieldSprite = shieldSprite;
+            console.log('Shield collected by Bot');
         }
     }
 
@@ -2787,8 +2888,10 @@ class GameScene extends Phaser.Scene {
         this.createAnimations();
     
         // Update bot color (choose a different color from the player)
-        this.botColor = this.rabbitColor === 'white' ? 'yellow' : (this.rabbitColor === 'yellow' ? 'grey' : 'white');
-        this.gameState.bot.setTexture(`rabbit-standing-${this.botColor}`);
+        this.botColor = this.rabbitColor === 'white' ? 'yellow' : 
+                    (this.rabbitColor === 'yellow' ? 'grey' : 
+                    (this.rabbitColor === 'grey' ? 'red' : 'white'));
+    this.gameState.bot.setTexture(`rabbit-standing-${this.botColor}`);
     
         // Recreate bot animations
         this.createBotAnimations();

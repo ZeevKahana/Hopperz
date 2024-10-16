@@ -219,7 +219,9 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            preload: path.join(__dirname, 'preload.js')
+            preload: path.join(__dirname, 'preload.js'),
+            webSecurity: false,
+            backgroundThrottling: false  // Add this line
         }
     });
 
@@ -248,11 +250,14 @@ function createWindow() {
     win.webContents.on('did-finish-load', () => {
         console.log('Window loaded successfully');
     });
+
+    process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 }
 
 app.whenReady().then(async () => {
     await connectToMongoDB();
     createWindow();
+    app.commandLine.appendSwitch('disable-background-timer-throttling');
 });
 
 app.on('window-all-closed', () => {
