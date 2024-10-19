@@ -78,5 +78,6 @@ also made an installer to install and play the game on any pc!
 -added pink color to default colors you can choose to play making it 5 different colors you can choose from
 -added colors to shop: cyan,orange,lime,black,jew
 -added slider to the shop for better functionallity
+
 new version available: https://mega.nz/file/whoyzJjD#Qqbg9rWyonVeiO_B4K-pBf0czYDabG4twMBDW0lyQnA
 
