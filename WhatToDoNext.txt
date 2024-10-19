@@ -15,7 +15,7 @@
 15. before starting a match have a 3! 2! 1! GO and then game begins
 
 
-18.Mode variations - after pressing start - give players match options to choose color, and game settings, number of enemies
+18.Mode variations - after pressing start - give players match options to choose color (DONE), and game settings (DONE), number of enemies (DONE)
 (time, score)
 
 

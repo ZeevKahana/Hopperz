@@ -214,8 +214,8 @@ ipcMain.handle('saveVolume', async (event, { email, volume }) => {
 
 function createWindow() {
     const win = new BrowserWindow({
-        width: 1024,
-        height: 768,
+        width: 815,
+        height: 660,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
