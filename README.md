@@ -80,5 +80,5 @@ also made an installer to install and play the game on any pc!
 -added colors to shop: cyan,orange,lime,black,jew
 -added slider to the shop for better functionallity
 
-new version available: https://mega.nz/file/dk4RhaoQ#wBV08Z5JLgO70-LM0p3rSJwIgOfCwvx9C75ST1xs8tg
+new version available: https://mega.nz/file/ll4kDbzA#wNV3G3jjAx-pUDKa9DoTkqo2yCOf5mzXIYlYWLMLOfo
 
