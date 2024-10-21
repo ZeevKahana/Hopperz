@@ -71,6 +71,7 @@ also made an installer to install and play the game on any pc!
 //OLD// new version available: https://mega.nz/file/V4pkABgJ#ybpi2jlCoP-1FpPI8U152x7FlDE1u6emieXvLLeG1-E //OLD//
 
 20/10/24 - ver 0.27
+-Main menu background improved 
 -'start' button converted to 'practice' button
 -added a setting to choose how many bots spawn with the player from 1-3
 -fixed a million bugs that occured due to changing bots from 1 to 1-3 in game.
