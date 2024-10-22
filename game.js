@@ -1,4 +1,5 @@
 import { createPopupMessage } from './GameUtils.js';
+import SocketManager from './SocketManager.js';
 
 const CONSTANTS = {
     PLAYER_JUMP_VELOCITY: -880,
@@ -480,6 +481,7 @@ class MainMenuScene extends Phaser.Scene {
     preload() {
       this.load.image('menuBackground', 'assets/menu_background.png');
       this.load.image('startButton', 'assets/start_button.png');
+      this.load.image('onlineButton', 'assets/online_button.png');
       this.load.audio('menuSoundtrack', 'assets/menu_soundtrack.mp3');
       this.load.image('optionsButton', 'assets/options-button.png');
       this.load.image('mapSelectButton', 'assets/map-select-button.png');
@@ -503,32 +505,52 @@ class MainMenuScene extends Phaser.Scene {
     }
   
     create() {
-        this.add.image(400, 300, 'menuBackground').setScale(1.28);
+        this.add.image(400, 300, 'menuBackground').setScale(1);
     
-        // Start button
-        this.startButton = this.add.image(406, 387, 'startButton')
+        // Start button with hover effects
+        this.startButton = this.add.image(370, 452, 'startButton')
             .setInteractive({ pixelPerfect: true })
             .setScale(0.85);
         this.startButton.on('pointerdown', () => this.showSelectionScreen());
+        this.startButton.on('pointerover', () => this.startButton.setScale(0.9));
+        this.startButton.on('pointerout', () => this.startButton.setScale(0.85));
     
-        // Shop button (new position)
-        this.shopButton = this.add.image(223, 373, 'shopIcon')
+        // Online button
+        this.onlineButton = this.add.image(370, 390, 'onlineButton')
+            .setInteractive({ pixelPerfect: true })
+            .setScale(0.85);
+        
+        this.onlineButtonHandler = () => {
+            console.log('Online button clicked, matchmaking state:', this.isMatchmaking);
+            if (!this.isMatchmaking && !this.isOptionsOpen && !this.isShopOpen && !this.mapSelectionActive) {
+                this.showMatchmaking();
+            }
+        };
+        
+        this.onlineButton.on('pointerdown', this.onlineButtonHandler);
+        this.onlineButton.on('pointerover', () => this.onlineButton.setScale(0.9));
+        this.onlineButton.on('pointerout', () => this.onlineButton.setScale(0.85));
+    
+        // Shop button
+        this.shopButton = this.add.image(200, 430, 'shopIcon')
             .setInteractive({ pixelPerfect: true })
             .setScale(1);
         this.shopButton.on('pointerdown', () => this.toggleShop());
     
-        // Options button
-        this.optionsButton = this.add.image(600, 385, 'optionsButton')
+        // Options button with hover effects
+        this.optionsButton = this.add.image(570, 452, 'optionsButton')
             .setInteractive({ pixelPerfect: true })
-            .setScale(0.10);
+            .setScale(0.85);
         this.optionsButton.on('pointerdown', () => {
             if (!this.isOptionsOpen) {
                 this.showOptionsPage();
             }
         });
+        this.optionsButton.on('pointerover', () => this.optionsButton.setScale(0.9));
+        this.optionsButton.on('pointerout', () => this.optionsButton.setScale(0.85));
     
         // Map select button
-        this.mapSelectButton = this.add.image(700, 100, 'mapSelectButton')
+        this.mapSelectButton = this.add.image(670, 100, 'mapSelectButton')
             .setInteractive({ pixelPerfect: true })
             .setScale(1);
         this.mapSelectButton.on('pointerdown', () => {
@@ -536,7 +558,7 @@ class MainMenuScene extends Phaser.Scene {
                 this.showMapSelection();
             }
         });
-
+    
         this.enableMainMenuButtons();
     
         // Map text
@@ -548,66 +570,120 @@ class MainMenuScene extends Phaser.Scene {
         // Carrot count display
         this.carrotIcon = this.add.image(20, 20, 'carrot').setOrigin(0, 0.5).setScale(0.5);
         this.carrotText = this.add.text(50, 20, '0', { fontSize: '24px', fill: '#fff' }).setOrigin(0, 0.5);
-        
+    
         // Initialize purchasedItems if not already done
         if (!this.purchasedItems) {
             this.purchasedItems = new Set();
         }
     
-        // Check for initial data passed from login
+        // Check for initial data passed from login or game
         const initData = this.scene.settings.data;
-    console.log('Received init data:', initData);
-    if (initData) {
-        if (initData.carrotCount !== undefined) {
-            this.carrotCount = initData.carrotCount;
-            this.carrotText.setText(`${this.carrotCount}`);
-            console.log('Set carrot count to:', this.carrotCount);
+        console.log('Received init data:', initData);
+        if (initData) {
+            if (initData.carrotCount !== undefined) {
+                this.carrotCount = initData.carrotCount;
+                this.carrotText.setText(`${this.carrotCount}`);
+                console.log('Set carrot count to:', this.carrotCount);
+            } else {
+                console.log('No carrot count in init data');
+            }
+            if (initData.purchasedItems) {
+                this.purchasedItems = new Set(initData.purchasedItems);
+                console.log('Set purchased items:', this.purchasedItems);
+            } else {
+                console.log('No purchased items in init data');
+            }
+            if (initData.lastSelectedColor) {
+                this.selectedColor = initData.lastSelectedColor;
+                localStorage.setItem('selectedRabbitColor', this.selectedColor);
+                console.log(`Color set from previous game: ${this.selectedColor}`);
+            }
         } else {
-            console.log('No carrot count in init data');
+            console.log('No init data, fetching carrot count');
+            this.fetchCarrotCount();
         }
-        if (initData.purchasedItems) {
-            this.purchasedItems = new Set(initData.purchasedItems);
-            console.log('Set purchased items:', this.purchasedItems);
-        } else {
-            console.log('No purchased items in init data');
+    
+        // Menu soundtrack
+        this.menuSoundtrack = this.sound.add('menuSoundtrack', { loop: true });
+        this.playMenuSoundtrack();
+    
+        // Event listener for refreshing carrot count
+        this.events.on('refreshCarrotCount', this.fetchCarrotCount, this);
+    
+        // Store main menu elements
+        this.mainMenuElements = [
+            this.startButton,
+            this.onlineButton,
+            this.shopButton,
+            this.optionsButton,
+            this.mapSelectButton,
+            this.mapText
+        ];
+    
+        // Reset any existing matchmaking state
+        this.isMatchmaking = false;
+        if (this.socketManager) {
+            this.socketManager.disconnect();
+            this.socketManager = null;
         }
-    } else {
-        console.log('No init data, fetching carrot count');
-        this.fetchCarrotCount();
+    
+        // Method to be called when returning from a game
+        this.events.on('wake', this.onWakeFromGame, this);
+    
+        this.loadVolumeSetting();
+    
+        this.selectedBotCount = null;
     }
-
-    // Menu soundtrack
-    this.menuSoundtrack = this.sound.add('menuSoundtrack', { loop: true });
-    this.playMenuSoundtrack();
-
-    // Event listener for refreshing carrot count
-    this.events.on('refreshCarrotCount', this.fetchCarrotCount, this);
-
-    // Store main menu elements
-    this.mainMenuElements = [this.startButton, this.shopButton, this.optionsButton, this.mapSelectButton, this.mapText];
-
-    //method to be called when returning from a game
-    this.events.on('wake', this.onWakeFromGame, this);
-
-    this.loadVolumeSetting();
-
-    // Check if we're coming back from a game and need to reset color selection
-    if (this.scene.settings.data && this.scene.settings.data.lastSelectedColor) {
-        this.selectedColor = this.scene.settings.data.lastSelectedColor;
-        localStorage.setItem('selectedRabbitColor', this.selectedColor);
-        console.log(`Color set from previous game: ${this.selectedColor}`);
+    
+    onWakeFromGame(sys, data) {
+        console.log('Waking MainMenuScene, data:', data);
+        if (data && data.fromGame) {
+            // Clean up any existing matchmaking state
+            if (this.socketManager) {
+                this.socketManager.disconnect();
+                this.socketManager = null;
+            }
+            this.isMatchmaking = false;
+    
+            // Clean up any UI elements from matchmaking
+            if (this.matchmakingElements) {
+                this.matchmakingElements.forEach(element => {
+                    if (element && element.destroy) {
+                        element.destroy();
+                    }
+                });
+                this.matchmakingElements = null;
+            }
+    
+            // Reset game settings
+            this.resetGameSettings();
+            
+            // Reset all menu states
+            this.isOptionsOpen = false;
+            this.isShopOpen = false;
+            this.mapSelectionActive = false;
+            this.selectionScreenActive = false;
+    
+            // Show main menu and restore button functionality
+            this.showMainMenu();
+            
+            // Re-enable online button specifically
+            if (this.onlineButton) {
+                this.onlineButton.clearTint();
+                this.onlineButton.setScale(0.85);
+                this.onlineButton.setAlpha(1);
+                this.onlineButton.setInteractive({ pixelPerfect: true });
+                
+                // Re-attach event handlers
+                this.onlineButton.removeAllListeners();
+                this.onlineButton.on('pointerdown', this.onlineButtonHandler);
+                this.onlineButton.on('pointerover', () => this.onlineButton.setScale(0.9));
+                this.onlineButton.on('pointerout', () => this.onlineButton.setScale(0.85));
+            }
+    
+            console.log('Game settings reset after returning from game');
+        }
     }
-    this.selectedBotCount = null;
-}
-
-onWakeFromGame(sys, data) {
-    console.log('Waking MainMenuScene, data:', data);
-    if (data && data.fromGame) {
-        this.resetGameSettings();
-        this.showMainMenu();  // Make sure this method exists and shows the main menu
-        console.log('Game settings reset after returning from game');
-    }
-}
 
 
     loadVolumeSetting() {
@@ -679,8 +755,35 @@ onWakeFromGame(sys, data) {
   
     showMainMenu() {
         console.log('Showing main menu');
-        this.mainMenuElements.forEach(element => element.setVisible(true));
+        
+        // Reset all menu states
+        this.isMatchmaking = false;
+        this.isOptionsOpen = false;
+        this.isShopOpen = false;
+        this.mapSelectionActive = false;
         this.selectionScreenActive = false;
+    
+        // Show and enable all main menu elements
+        this.mainMenuElements.forEach(element => {
+            if (element) {
+                element.setVisible(true);
+                if (element.setInteractive) {
+                    element.setInteractive({ pixelPerfect: true });
+                }
+            }
+        });
+    
+        // Specifically handle the online button
+        if (this.onlineButton) {
+            this.onlineButton.setVisible(true);
+            this.onlineButton.setInteractive({ pixelPerfect: true });
+            this.onlineButton.setScale(0.85);
+            this.onlineButton.clearTint();
+            console.log('Online button re-enabled in showMainMenu');
+        }
+    
+        // Re-enable all button interactions
+        this.enableMainMenuButtons();
     }
 
     showMapSelection() {
@@ -786,58 +889,60 @@ onWakeFromGame(sys, data) {
         }).setOrigin(0.5);
     
         // Color selection
-        const colorTitle = this.add.text(200, 150, 'Select a color', { 
-            fontSize: '24px', 
-            fill: '#fff' 
-        }).setOrigin(0.5);
-    
-         // Regular colors
+    const colorTitle = this.add.text(220, 150, 'Select a color', { 
+        fontSize: '24px', 
+        fill: '#fff' 
+    }).setOrigin(0.5);
+
+    const createColorButtons = (colors, startY) => {
+        const buttonsPerRow = 5;
+        const buttonWidth = 60;
+        const buttonHeight = 60;
+        const padding = 10;
+        const startX = 80;
+
+        colors.forEach((color, index) => {
+            const row = Math.floor(index / buttonsPerRow);
+            const col = index % buttonsPerRow;
+            const x = startX + col * (buttonWidth + padding);
+            const y = startY + row * (buttonHeight + padding);
+
+            const button = this.add.image(x, y, `${color}-standing`)
+                .setScale(1)
+                .setInteractive();
+
+            button.on('pointerdown', () => this.selectColor(color, button));
+            button.on('pointerover', () => {
+                if (this.selectedColor !== color) {
+                    button.setScale(1.1);
+                }
+            });
+            button.on('pointerout', () => {
+                if (this.selectedColor !== color) {
+                    button.setScale(1);
+                }
+            });
+
+            this.colorButtons.push(button);
+        });
+    };
+
+    // Regular colors
     const baseColors = ['white', 'yellow', 'grey', 'red', 'pink'];
-    baseColors.forEach((color, index) => {
-        const button = this.add.image(80 + index * 60, 200, `${color}-standing`)
-            .setScale(1)
-            .setInteractive();
-
-        button.on('pointerdown', () => this.selectColor(color, button));
-        button.on('pointerover', () => {
-            if (this.selectedColor !== color) {
-                button.setScale(1.1);
-            }
-        });
-        button.on('pointerout', () => {
-            if (this.selectedColor !== color) {
-                button.setScale(1);
-            }
-        });
-
-        this.colorButtons.push(button);
-    });
+    createColorButtons(baseColors, 200);
 
     // Purchased colors 
     const purchasedColors = [];
     if (this.purchasedItems.has('blueRabbit')) purchasedColors.push('blue');
     if (this.purchasedItems.has('purpleRabbit')) purchasedColors.push('purple');
     if (this.purchasedItems.has('cyanRabbit')) purchasedColors.push('cyan'); 
+    if (this.purchasedItems.has('orangeRabbit')) purchasedColors.push('orange'); 
+    if (this.purchasedItems.has('limeRabbit')) purchasedColors.push('lime'); 
+    if (this.purchasedItems.has('blackRabbit')) purchasedColors.push('black'); 
+    if (this.purchasedItems.has('jewRabbit')) purchasedColors.push('jew');
 
-    purchasedColors.forEach((color, index) => {
-        const button = this.add.image(80 + index * 60, 250, `${color}-standing`)
-            .setScale(1)
-            .setInteractive();
-
-        button.on('pointerdown', () => this.selectColor(color, button));
-        button.on('pointerover', () => {
-            if (this.selectedColor !== color) {
-                button.setScale(1.1);
-            }
-        });
-        button.on('pointerout', () => {
-            if (this.selectedColor !== color) {
-                button.setScale(1);
-            }
-        });
-
-        this.colorButtons.push(button);
-    });
+    const purchasedColorsY = 170 + (Math.ceil(baseColors.length / 5) * (60 + 10)) + 25;
+    createColorButtons(purchasedColors, purchasedColorsY);
     
         // Difficulty selection
     const difficultyTitle = this.add.text(600, 150, 'Select difficulty', { 
@@ -1409,19 +1514,73 @@ selectBotCount(count, selectedButton) {
         this.enableMainMenuButtons();
     }
 
-disableMainMenuButtons() {
-    if (this.startButton) this.startButton.disableInteractive();
-    if (this.shopButton) this.shopButton.disableInteractive();
-    if (this.optionsButton) this.optionsButton.disableInteractive();
-    if (this.mapSelectButton) this.mapSelectButton.disableInteractive();
-}
-
-enableMainMenuButtons() {
-    if (this.startButton) this.startButton.setInteractive();
-    if (this.shopButton) this.shopButton.setInteractive();
-    if (this.optionsButton) this.optionsButton.setInteractive();
-    if (this.mapSelectButton) this.mapSelectButton.setInteractive();
-}
+    enableMainMenuButtons() {
+        console.log('Enabling main menu buttons');
+    
+        if (this.startButton) {
+            this.startButton.setInteractive({ pixelPerfect: true });
+            this.startButton.clearTint();
+        }
+    
+        if (this.onlineButton) {
+            this.onlineButton.setInteractive({ pixelPerfect: true });
+            this.onlineButton.clearTint();
+            this.onlineButton.setScale(0.85);
+            console.log('Online button enabled in enableMainMenuButtons');
+        }
+    
+        if (this.shopButton) {
+            this.shopButton.setInteractive({ pixelPerfect: true });
+            this.shopButton.clearTint();
+        }
+    
+        if (this.optionsButton) {
+            this.optionsButton.setInteractive({ pixelPerfect: true });
+            this.optionsButton.clearTint();
+        }
+    
+        if (this.mapSelectButton) {
+            this.mapSelectButton.setInteractive({ pixelPerfect: true });
+            this.mapSelectButton.clearTint();
+        }
+    
+        // Re-attach event handlers if they were lost
+        if (this.onlineButton && !this.onlineButton.listeners('pointerdown').length) {
+            this.onlineButton.on('pointerdown', this.onlineButtonHandler);
+            this.onlineButton.on('pointerover', () => this.onlineButton.setScale(0.9));
+            this.onlineButton.on('pointerout', () => this.onlineButton.setScale(0.85));
+        }
+    }
+    
+    disableMainMenuButtons() {
+        console.log('Disabling main menu buttons');
+    
+        if (this.startButton) {
+            this.startButton.disableInteractive();
+            this.startButton.setTint(0x666666);
+        }
+    
+        if (this.onlineButton) {
+            this.onlineButton.disableInteractive();
+            this.onlineButton.setTint(0x666666);
+            console.log('Online button disabled in disableMainMenuButtons');
+        }
+    
+        if (this.shopButton) {
+            this.shopButton.disableInteractive();
+            this.shopButton.setTint(0x666666);
+        }
+    
+        if (this.optionsButton) {
+            this.optionsButton.disableInteractive();
+            this.optionsButton.setTint(0x666666);
+        }
+    
+        if (this.mapSelectButton) {
+            this.mapSelectButton.disableInteractive();
+            this.mapSelectButton.setTint(0x666666);
+        }
+    }
 
     purchaseItem(itemId, price) {
         window.electronAPI.purchaseItem(localStorage.getItem('userEmail'), itemId, price)
@@ -1443,6 +1602,356 @@ enableMainMenuButtons() {
                 createPopupMessage(this, 'An error occurred during purchase.');
             });
     }
+
+
+    showMatchmaking() {
+        if (this.isShopOpen || this.isOptionsOpen || this.mapSelectionActive) return;
+        if (this.isMatchmaking) return;
+        
+        console.log('Starting matchmaking process');
+        this.isMatchmaking = true;
+    
+        // Clean up any existing socket manager
+        if (this.socketManager) {
+            this.socketManager.disconnect();
+            this.socketManager = null;
+        }
+    
+        // Disable main menu buttons
+        this.disableMainMenuButtons();
+    
+        // Create matchmaking UI
+        const bg = this.add.rectangle(400, 300, 400, 300, 0x000000, 0.8);
+        const searchingText = this.add.text(400, 250, 'Searching for players...', {
+            fontSize: '24px',
+            fill: '#fff'
+        }).setOrigin(0.5);
+        const playerCountText = this.add.text(400, 300, 'Players: 1/4', {
+            fontSize: '20px',
+            fill: '#fff'
+        }).setOrigin(0.5);
+        const cancelButton = this.add.text(400, 350, 'Cancel', {
+            fontSize: '20px',
+            fill: '#fff',
+            backgroundColor: '#aa0000',
+            padding: { x: 20, y: 10 }
+        })
+        .setInteractive()
+        .setOrigin(0.5);
+    
+        this.matchmakingElements = [bg, searchingText, playerCountText, cancelButton];
+    
+        // Initialize new Socket.IO connection
+        this.socketManager = new SocketManager();
+        this.socketManager.connect()
+            .then(() => {
+                console.log('Socket connection established');
+                this.socketManager.onMatchmakingUpdate((data) => {
+                    if (this.isMatchmaking) { // Only update if still matchmaking
+                        playerCountText.setText(`Players: ${data.playersInQueue}/4`);
+                    }
+                });
+    
+                this.socketManager.onMatchFound((data) => {
+                    if (this.isMatchmaking) { // Only proceed if still matchmaking
+                        this.showOnlineColorSelection(data);
+                    }
+                });
+    
+                this.socketManager.findMatch();
+            })
+            .catch(error => {
+                console.error('Failed to connect to matchmaking server:', error);
+                this.hideMatchmaking();
+                // Show error message to user
+                this.showErrorMessage('Failed to connect to matchmaking server. Please try again.');
+            });
+    
+        cancelButton.on('pointerdown', () => {
+            if (this.socketManager) {
+                this.socketManager.cancelMatch();
+            }
+            this.hideMatchmaking();
+            this.enableMainMenuButtons();
+        });
+    }
+    
+    hideMatchmaking() {
+        console.log('Hiding matchmaking UI');
+        
+        // Clear matchmaking state
+        this.isMatchmaking = false;
+    
+        // Stop any ongoing animations or timers
+        this.time.removeAllEvents();
+    
+        // Destroy UI elements
+        if (this.matchmakingElements) {
+            this.matchmakingElements.forEach(element => {
+                if (element && element.destroy) {
+                    element.destroy();
+                }
+            });
+            this.matchmakingElements = null;
+        }
+    
+        // Clean up socket connection
+        if (this.socketManager) {
+            this.socketManager.disconnect();
+            this.socketManager = null;
+        }
+    
+        // Re-enable menu buttons
+        this.enableMainMenuButtons();
+    }
+    
+    // Add this helper method
+    showErrorMessage(message) {
+        const errorText = this.add.text(400, 300, message, {
+            fontSize: '20px',
+            fill: '#ff0000',
+            backgroundColor: '#000000',
+            padding: { x: 20, y: 10 }
+        }).setOrigin(0.5);
+    
+        this.time.delayedCall(3000, () => {
+            errorText.destroy();
+        });
+    }
+    
+    // Add this method for color selection screen (you'll need it when a match is found)
+    showOnlineColorSelection(matchData) {
+        if (this.matchmakingElements) {
+            this.matchmakingElements.forEach(element => {
+                if (element) element.destroy();
+            });
+            this.matchmakingElements = [];
+        }
+    
+        // Create background and title
+        const bg = this.add.rectangle(400, 300, 500, 400, 0x000000, 0.9);
+        const titleText = this.add.text(400, 150, 'Select Your Color', {
+            fontSize: '32px',
+            fill: '#fff'
+        }).setOrigin(0.5);
+    
+        const playersText = this.add.text(400, 190, 'Players in lobby: 1/4', {
+            fontSize: '20px',
+            fill: '#fff'
+        }).setOrigin(0.5);
+    
+        let selectedColor = null;
+        let takenColors = new Set();
+        this.colorButtons = [];
+    
+        const createColorButtons = (colors, startY) => {
+            const buttonsPerRow = 4;
+            const buttonWidth = 60;
+            const buttonHeight = 60;
+            const padding = 10;
+            const startX = 250;
+    
+            colors.forEach((color, index) => {
+                const row = Math.floor(index / buttonsPerRow);
+                const col = index % buttonsPerRow;
+                const x = startX + col * (buttonWidth + padding);
+                const y = startY + row * (buttonHeight + padding);
+    
+                // Create background and overlay
+                const bgSquare = this.add.rectangle(x, y, 50, 50, 0x1a472a, 0.5);
+                const greyOverlay = this.add.rectangle(x, y, 50, 50, 0x000000, 0);
+    
+                // Create rabbit sprite
+                const button = this.add.image(x, y, `${color}-standing`)
+                    .setScale(1)
+                    .setInteractive();
+    
+                const updateButtonState = () => {
+                    const isTaken = takenColors.has(color) && color !== selectedColor;
+                    button.setAlpha(isTaken ? 0.5 : 1);
+                    greyOverlay.setAlpha(isTaken ? 0.5 : 0);
+                    
+                    if (isTaken) {
+                        button.disableInteractive();
+                    } else {
+                        button.setInteractive();
+                    }
+    
+                    if (color === selectedColor) {
+                        button.setScale(1.2);
+                        bgSquare.setFillStyle(0x4CAF50, 0.7);
+                    } else if (!isTaken) {
+                        button.setScale(1);
+                        bgSquare.setFillStyle(0x1a472a, 0.5);
+                    }
+                };
+    
+                button.on('pointerdown', () => {
+                    if (takenColors.has(color) && color !== selectedColor) return;
+    
+                    // Deselect previous button
+                    this.colorButtons.forEach(btn => {
+                        if (btn.button.color === selectedColor) {
+                            btn.button.setScale(1);
+                            btn.bgSquare.setFillStyle(0x1a472a, 0.5);
+                        }
+                    });
+    
+                    selectedColor = color;
+                    updateButtonState();
+                    this.socketManager.selectColor(color);
+                });
+    
+                button.on('pointerover', () => {
+                    if (!takenColors.has(color) || color === selectedColor) {
+                        button.setScale(1.1);
+                        bgSquare.setFillStyle(0x2a673a, 0.6);
+                    }
+                });
+    
+                button.on('pointerout', () => {
+                    if (color !== selectedColor) {
+                        button.setScale(1);
+                        bgSquare.setFillStyle(0x1a472a, 0.5);
+                    }
+                });
+    
+                button.color = color;
+                this.colorButtons.push({
+                    button,
+                    bgSquare,
+                    greyOverlay,
+                    updateState: updateButtonState
+                });
+            });
+        };
+    
+        // Create base color buttons
+        const baseColors = ['white', 'yellow', 'grey', 'red', 'pink'];
+        createColorButtons(baseColors, 250);
+    
+        // Create purchased color buttons
+        const purchasedColors = [];
+        if (this.purchasedItems) {
+            if (this.purchasedItems.has('blueRabbit')) purchasedColors.push('blue');
+            if (this.purchasedItems.has('purpleRabbit')) purchasedColors.push('purple');
+            if (this.purchasedItems.has('cyanRabbit')) purchasedColors.push('cyan');
+            if (this.purchasedItems.has('orangeRabbit')) purchasedColors.push('orange');
+            if (this.purchasedItems.has('limeRabbit')) purchasedColors.push('lime');
+            if (this.purchasedItems.has('blackRabbit')) purchasedColors.push('black');
+            if (this.purchasedItems.has('jewRabbit')) purchasedColors.push('jew');
+        }
+    
+        if (purchasedColors.length > 0) {
+            createColorButtons(purchasedColors, 330);
+        }
+    
+        // Ready button
+        const readyButton = this.add.text(400, 450, 'Ready', {
+            fontSize: '24px',
+            fill: '#fff',
+            backgroundColor: '#666666',
+            padding: { x: 20, y: 10 }
+        })
+        .setOrigin(0.5)
+        .setInteractive();
+    
+        // Player status display
+        const playerStatuses = [];
+        for (let i = 0; i < 4; i++) {
+            const status = this.add.container(600, 200 + (i * 50));
+            
+            const colorCircle = this.add.circle(0, 0, 10, 0xcccccc);
+            const nameText = this.add.text(20, -10, `Player ${i + 1}`, { 
+                fontSize: '16px', 
+                fill: '#fff' 
+            });
+            const readyText = this.add.text(120, -10, 'Not Ready', { 
+                fontSize: '16px', 
+                fill: '#ff0000' 
+            });
+            
+            status.add([colorCircle, nameText, readyText]);
+            playerStatuses.push({ container: status, colorCircle, nameText, readyText });
+        }
+    
+        let isReady = false;
+        readyButton.on('pointerdown', () => {
+            if (!selectedColor) {
+                console.log('Must select a color first');
+                return;
+            }
+            isReady = !isReady;
+            readyButton.setText(isReady ? 'Ready!' : 'Ready');
+            readyButton.setBackgroundColor(isReady ? '#4CAF50' : '#666666');
+            this.socketManager.setReady(isReady);
+        });
+    
+        // Handle match updates
+        this.socketManager.onMatchUpdate((data) => {
+            playersText.setText(`Players in lobby: ${data.players.length}/4`);
+            
+            // Update taken colors
+            takenColors = new Set(data.players.map(p => p.color).filter(Boolean));
+            // Update all button states
+            this.colorButtons.forEach(btn => btn.updateState());
+            
+            data.players.forEach((player, index) => {
+                if (playerStatuses[index]) {
+                    const status = playerStatuses[index];
+                    if (player.color) {
+                        status.colorCircle.setFillStyle(this.getColorValue(player.color));
+                    }
+                    status.readyText.setText(player.ready ? 'Ready!' : 'Not Ready');
+                    status.readyText.setFill(player.ready ? '#00ff00' : '#ff0000');
+                }
+            });
+        });
+    
+        // Handle game start
+        this.socketManager.onGameStart((gameConfig) => {
+            console.log('Starting online game with config:', gameConfig);
+            if (this.menuSoundtrack) {
+                this.menuSoundtrack.stop();
+            }
+    
+            this.matchmakingElements.forEach(element => {
+                if (element) element.destroy();
+            });
+            this.matchmakingElements = [];
+    
+            this.scene.start('GameScene', gameConfig);
+        });
+    
+        this.matchmakingElements = [
+            bg,
+            titleText,
+            playersText,
+            readyButton,
+            ...this.colorButtons.map(b => b.button),
+            ...this.colorButtons.map(b => b.bgSquare),
+            ...this.colorButtons.map(b => b.greyOverlay),
+            ...playerStatuses.map(s => s.container)
+        ];
+    }
+    
+    getColorValue(colorName) {
+        const colorMap = {
+            'white': 0xffffff,
+            'yellow': 0xffff00,
+            'grey': 0x808080,
+            'red': 0xff0000,
+            'pink': 0xff69b4,
+            'blue': 0x0000ff,
+            'purple': 0x800080,
+            'cyan': 0x00ffff,
+            'orange': 0xffa500,
+            'lime': 0x00ff00,
+            'black': 0x000000,
+            'jew': 0x8B4513  // Added this color
+        };
+        return colorMap[colorName] || 0xcccccc;
+    }
     
 }
 
@@ -1459,58 +1968,84 @@ class GameScene extends Phaser.Scene {
     init(data) {
         console.log('Initializing GameScene with data:', JSON.stringify(data));
         
-        let gameConfig = data;
+        let gameConfig = data;  // Add this line to properly initialize gameConfig
         
-        // If no data is passed, try to use localStorage as a fallback
-        if (!gameConfig || Object.keys(gameConfig).length === 0) {
-            const storedConfig = localStorage.getItem('gameConfig');
-            if (storedConfig) {
-                gameConfig = JSON.parse(storedConfig);
-                console.log('Using localStorage gameConfig:', JSON.stringify(gameConfig));
-            } else {
-                console.warn('No gameConfig found in localStorage');
-            }
-        }
-        
-        console.log('Final gameConfig being used:', JSON.stringify(gameConfig));
-        
-        try {
-            this.cpuDifficulty = gameConfig.difficulty || 'normal';
-            this.currentMap = gameConfig.map || 'sky';
-            this.rabbitColor = gameConfig.rabbitColor || localStorage.getItem('selectedRabbitColor') || 'white';
+        if (data.isOnlineGame) {
+            this.isOnlineGame = true;
+            this.onlinePlayers = data.players;
+            this.playerId = data.playerId;
             
-            if (gameConfig.botCount !== undefined && gameConfig.botCount !== null) {
-                this.numberOfBots = parseInt(gameConfig.botCount, 10);
-                if (isNaN(this.numberOfBots) || this.numberOfBots < 1 || this.numberOfBots > 3) {
-                    console.warn(`Invalid bot count: ${gameConfig.botCount}, defaulting to 3`);
-                    this.numberOfBots = 3;
-                } else {
-                    console.log(`Received bot count: ${gameConfig.botCount}, Parsed number of bots: ${this.numberOfBots}`);
-                }
+            // Randomly select a map for online play
+            const maps = ['desert', 'city', 'space'];
+            this.currentMap = maps[Math.floor(Math.random() * maps.length)];
+            console.log('Selected random map for online game:', this.currentMap);
+    
+            // Find our player data using our socket ID
+            const ourPlayer = this.onlinePlayers.find(p => p.id === this.playerId);
+            if (ourPlayer) {
+                this.rabbitColor = ourPlayer.color;
+                console.log('Found our player data:', ourPlayer);
             } else {
-                console.warn('Bot count not received or is null, using default value of 3');
+                console.error('Could not find our player in online players array');
+                this.rabbitColor = localStorage.getItem('selectedRabbitColor') || 'white';
+            }
+    
+            // Set up other players
+            this.numberOfBots = this.onlinePlayers.length - 1;
+            this.botColors = this.onlinePlayers
+                .filter(p => p.id !== this.playerId)
+                .map(p => p.color);
+    
+            console.log('Online game setup:', {
+                playerId: this.playerId,
+                rabbitColor: this.rabbitColor,
+                numberOfBots: this.numberOfBots,
+                botColors: this.botColors,
+                currentMap: this.currentMap
+            });
+        } else {
+            // Offline game initialization
+            if (!gameConfig || Object.keys(gameConfig).length === 0) {
+                const storedConfig = localStorage.getItem('gameConfig');
+                if (storedConfig) {
+                    gameConfig = JSON.parse(storedConfig);
+                    console.log('Using localStorage gameConfig:', JSON.stringify(gameConfig));
+                } else {
+                    console.warn('No gameConfig found in localStorage');
+                }
+            }
+    
+            try {
+                this.cpuDifficulty = gameConfig.difficulty || 'normal';
+                this.currentMap = gameConfig.map || 'sky';
+                this.rabbitColor = gameConfig.rabbitColor || localStorage.getItem('selectedRabbitColor') || 'white';
+                
+                if (gameConfig.botCount !== undefined && gameConfig.botCount !== null) {
+                    this.numberOfBots = parseInt(gameConfig.botCount, 10);
+                    if (isNaN(this.numberOfBots) || this.numberOfBots < 1 || this.numberOfBots > 3) {
+                        console.warn(`Invalid bot count: ${gameConfig.botCount}, defaulting to 3`);
+                        this.numberOfBots = 3;
+                    }
+                } else {
+                    this.numberOfBots = 3;
+                }
+            } catch (error) {
+                console.error('Error in GameScene init:', error);
+                this.cpuDifficulty = 'normal';
+                this.currentMap = 'sky';
+                this.rabbitColor = 'white';
                 this.numberOfBots = 3;
             }
     
-            console.log('GameScene initialization complete with values:', {
-                cpuDifficulty: this.cpuDifficulty,
-                currentMap: this.currentMap,
-                rabbitColor: this.rabbitColor,
-                numberOfBots: this.numberOfBots
-            });
-        } catch (error) {
-            console.error('Error in GameScene init:', error);
-            this.cpuDifficulty = 'normal';
-            this.currentMap = 'sky';
-            this.rabbitColor = 'white';
-            this.numberOfBots = 3;
+            // Set up bot colors for offline game
+            this.botColors = ['white', 'yellow', 'grey', 'red', 'blue', 'purple']
+                .filter(color => color !== this.rabbitColor)
+                .slice(0, this.numberOfBots);
         }
-    
-        // Setup the bots and other game-related objects
-        this.botColors = ['white', 'yellow', 'grey', 'red', 'blue', 'purple'].filter(color => color !== this.rabbitColor);
+        
         localStorage.setItem('selectedRabbitColor', this.rabbitColor);
     
-        // Initialize gameState with updated number of bots
+        // Initialize gameState
         this.gameState = {
             player: null,
             bots: new Array(this.numberOfBots).fill(null),
@@ -1541,8 +2076,6 @@ class GameScene extends Phaser.Scene {
         };
     
         console.log('GameScene initialization complete');
-        
-        // Clear the global gameConfig after using it
         window.gameConfig = undefined;
     }
     
@@ -1617,13 +2150,41 @@ class GameScene extends Phaser.Scene {
             this.gameState.botScoreTexts.forEach(text => text.destroy());
         }
 
-        // Update score texts
-        this.gameState.playerScoreText = this.add.text(16, 16, 'Player Score: 0', { fontSize: '24px', fill: '#000' });
-        this.gameState.botScoreTexts = [];
-        for (let i = 0; i < this.numberOfBots; i++) {
-            const botScoreText = this.add.text(16, 50 + i * 30, `Bot ${i + 1} Score: 0`, { fontSize: '24px', fill: '#000' });
-            this.gameState.botScoreTexts.push(botScoreText);
-        }
+        // Now create score texts after sprites are created
+const gameWidth = this.sys.game.config.width;
+const padding = 40;
+
+// Player score text (top-left)
+this.gameState.playerScoreText = this.add.text(
+    padding + this.playerSprite.width + 10,
+    padding + this.playerSprite.height / 2,
+    ': 0',
+    { fontSize: '24px', fill: '#000' }
+).setOrigin(0, 0.5);
+
+this.gameState.botScoreTexts = [];
+for (let i = 0; i < this.numberOfBots; i++) {
+    let x, y;
+    if (i === 0) {
+        // Bot 1: Below player
+        x = padding + this.botSprites[i].width + 10;
+        y = padding + this.playerSprite.height + 20 + this.botSprites[i].height / 2;
+    } else if (i === 1) {
+        // Bot 2: Top-right
+        x = gameWidth - padding - this.botSprites[i].width - 10;
+        y = padding + this.botSprites[i].height / 2;
+    } else {
+        // Bot 3: Below Bot 2
+        x = gameWidth - padding - this.botSprites[i].width - 10;
+        y = padding + this.playerSprite.height + 20 + this.botSprites[i].height / 2;
+    }
+
+    // Change the text format based on position (left or right side)
+    const scoreText = i === 0 ? ': 0' : '0 :';
+    const botScoreText = this.add.text(x, y, scoreText, { fontSize: '24px', fill: '#000' });
+    botScoreText.setOrigin(i > 0 ? 1 : 0, 0.5);
+    this.gameState.botScoreTexts.push(botScoreText);
+}
 
         if (this.currentMap === 'space') {
             this.physics.world.setBounds(0, 0, this.sys.game.config.width, Infinity);
@@ -2352,12 +2913,50 @@ class GameScene extends Phaser.Scene {
     }
 
     createUI() {
-        this.gameState.playerScoreText = this.add.text(16, 16, 'Player Score: 0', { fontSize: '24px', fill: '#000' });
+        const gameWidth = this.sys.game.config.width;
+        const gameHeight = this.sys.game.config.height;
+        const spriteScale = 1; // Adjust as needed
+        const padding = 40; // Padding from screen edges
+    
+        // Player sprite and score (top-left)
+        this.playerSprite = this.add.image(padding, padding, `rabbit-standing-${this.rabbitColor}`);
+        this.playerSprite.setOrigin(0, 0).setScale(spriteScale);
+        this.gameState.playerScoreText = this.add.text(
+            padding + this.playerSprite.displayWidth + 10, 
+            padding + this.playerSprite.displayHeight / 2, 
+            ': 0', 
+            { fontSize: '24px', fill: '#000' }
+        ).setOrigin(0, 0.5);
+    
+        // Bot sprites and scores
+        this.botSprites = [];
         this.gameState.botScoreTexts = [];
         for (let i = 0; i < this.numberOfBots; i++) {
-            const botScoreText = this.add.text(16, 50 + i * 30, `Bot ${i + 1} Score: 0`, { fontSize: '24px', fill: '#000' });
+            let x, y;
+            if (i === 0) {
+                x = padding;
+                y = padding + this.playerSprite.displayHeight + 20;
+            } else if (i === 1) {
+                x = gameWidth - padding;
+                y = padding;
+            } else {
+                x = gameWidth - padding;
+                y = padding + this.playerSprite.displayHeight + 20;
+            }
+    
+            const botSprite = this.add.image(x, y, `rabbit-standing-${this.gameState.bots[i].color}`);
+            botSprite.setOrigin(i > 0 ? 1 : 0, 0).setScale(spriteScale);
+            this.botSprites.push(botSprite);
+    
+            const scoreX = i > 0 ? x - botSprite.displayWidth - 10 : x + botSprite.displayWidth + 10;
+            const scoreY = y + botSprite.displayHeight / 2;
+            const botScoreText = this.add.text(scoreX, scoreY, ': 0', { fontSize: '24px', fill: '#000' });
+            botScoreText.setOrigin(i > 0 ? 1 : 0, 0.5);
             this.gameState.botScoreTexts.push(botScoreText);
         }
+    
+        console.log('Player score text created:', this.gameState.playerScoreText);
+        console.log('Bot score texts created:', this.gameState.botScoreTexts);
     }
 
     createCloud() {
@@ -2583,23 +3182,37 @@ updateTimer() {
             bot.dead = true;
             bot.setVisible(false);
             bot.body.enable = false;
+            
             if (killerIndex !== undefined && killerIndex >= 0 && killerIndex < this.gameState.botScores.length) {
                 this.gameState.botScores[killerIndex] += 1;
-                if (this.gameState.botScoreTexts[killerIndex]) {
-                    this.gameState.botScoreTexts[killerIndex].setText(`Bot ${killerIndex + 1} Score: ${this.gameState.botScores[killerIndex]}`);
+                if (this.gameState.botScoreTexts[killerIndex] && this.gameState.botScoreTexts[killerIndex].setText) {
+                    try {
+                        this.gameState.botScoreTexts[killerIndex].setText(`: ${this.gameState.botScores[killerIndex]}`);
+                    } catch (error) {
+                        console.warn(`Error updating bot ${killerIndex} score text:`, error);
+                    }
                 } else {
-                    console.warn(`Bot score text not found for index ${killerIndex}`);
+                    console.warn(`Bot score text not found or invalid for index ${killerIndex}`);
                 }
             } else {
                 this.gameState.playerScore += 1;
-                this.gameState.playerScoreText.setText('Player Score: ' + this.gameState.playerScore);
+                if (this.gameState.playerScoreText && this.gameState.playerScoreText.setText) {
+                    try {
+                        this.gameState.playerScoreText.setText(`: ${this.gameState.playerScore}`);
+                    } catch (error) {
+                        console.warn(`Error updating player score text:`, error);
+                    }
+                } else {
+                    console.warn(`Player score text not found or invalid`);
+                }
             }
+            
             this.checkWinCondition();
             if (Math.max(...this.gameState.botScores, this.gameState.playerScore) < CONSTANTS.WIN_SCORE) {
-                this.time.addEvent({ 
-                    delay: CONSTANTS.RESPAWN_DELAY, 
-                    callback: () => this.respawnEntity(bot, 'bot', victimIndex), 
-                    callbackScope: this 
+                this.time.addEvent({
+                    delay: CONSTANTS.RESPAWN_DELAY,
+                    callback: () => this.respawnEntity(bot, 'bot', victimIndex),
+                    callbackScope: this
                 });
             }
         }
@@ -2613,8 +3226,13 @@ updateTimer() {
             const botIndex = this.gameState.bots.indexOf(killerBot);
             if (botIndex !== -1 && this.gameState.botScoreTexts[botIndex]) {
                 this.gameState.botScores[botIndex] += 1;
-                this.gameState.botScoreTexts[botIndex].setText(`Bot ${botIndex + 1} Score: ${this.gameState.botScores[botIndex]}`);
+                try {
+                    this.gameState.botScoreTexts[botIndex].setText(`: ${this.gameState.botScores[botIndex]}`);
+                } catch (error) {
+                    console.warn(`Error updating bot ${botIndex} score:`, error);
+                }
             }
+    
             this.checkWinCondition();
             if (Math.max(...this.gameState.botScores) < CONSTANTS.WIN_SCORE) {
                 this.time.addEvent({ 
@@ -2991,14 +3609,14 @@ updateTimer() {
         if (this.gameState.afterGameSoundtrack) this.gameState.afterGameSoundtrack.play();
     
         // Update score texts
-        this.gameState.playerScoreText.setText('Player Score: ' + this.gameState.playerScore);
-        this.gameState.botScoreTexts.forEach((text, index) => {
-            if (index < this.numberOfBots) {
-                text.setText(`Bot ${index + 1} Score: ${this.gameState.botScores[index]}`);
-            } else {
-                text.setVisible(false);
-            }
-        });
+    this.gameState.playerScoreText.setText(`: ${this.gameState.playerScore}`);
+    this.gameState.botScoreTexts.forEach((text, index) => {
+        if (index < this.numberOfBots) {
+            text.setText(`: ${this.gameState.botScores[index]}`);
+        } else {
+            text.setVisible(false);
+        }
+    });
     
         // Create a container for all end-game UI elements
         this.gameState.endGameContainer = this.add.container(400, 300);
@@ -3286,17 +3904,17 @@ updateTimer() {
         // Reset scores
         this.gameState.playerScore = 0;
         this.gameState.botScores = new Array(this.numberOfBots).fill(0);
-
+    
         // Update score texts
-        this.gameState.playerScoreText.setText('Player Score: 0');
-        this.gameState.botScoreTexts.forEach((text, index) => {
-            if (index < this.numberOfBots) {
-                text.setText(`Bot ${index + 1} Score: 0`);
-                text.setVisible(true);
-            } else {
-                text.setVisible(false);
-            }
-        });
+    this.gameState.playerScoreText.setText(': 0');
+    this.gameState.botScoreTexts.forEach((text, index) => {
+        if (index < this.numberOfBots) {
+            text.setText(': 0');
+            text.setVisible(true);
+        } else {
+            text.setVisible(false);
+        }
+    });
     
         // Clear all end-game UI elements
         if (this.gameState.endGameContainer) {
