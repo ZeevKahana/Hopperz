@@ -82,3 +82,14 @@ also made an installer to install and play the game on any pc!
 
 new version available: https://mega.nz/file/ll4kDbzA#wNV3G3jjAx-pUDKa9DoTkqo2yCOf5mzXIYlYWLMLOfo
 
+23/10/24 - ver 0.28 birthday.
+
+-score now shows sprite of each player color instead of 'player1,player2, etc...' 
+-implemented online button.
+-online search for lobby window
+-after finding 4 total players looking for a match, automatically groups them in a lobby and each player chooses a color and presses ready
+- after all players press ready game starts
+- online currently only works on localhost
+- buttons in menu now look smoother
+
+
